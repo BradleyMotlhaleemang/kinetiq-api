@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  displayName      String
+  experienceLevel  String   @default("INTERMEDIATE")
+  trainingAgeMths  Int      @default(0)
+  bodyweightKg     Float?
+  refreshTokenHash String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Exercise {
+  id               String                     @id @default(cuid())
+  name             String                     @unique
+  primaryMuscle    String
+  secondaryMuscles String[]
+  movementPattern  String
+  exerciseType     String
+  isCompound       Boolean                    @default(true)
+  metadata         ExerciseMetadata?
+  substitutionPools SubstitutionPoolExercise[]
+}
+
+model ExerciseMetadata {
+  id                      String           @id @default(cuid())
+  exerciseId              String           @unique
+  exercise                Exercise         @relation(fields: [exerciseId], references: [id])
+  fatigueScore            Float
+  stabilityDemand         Float
+  methodFatigueMultiplier Float
+  equipmentProfileId      String
+  equipmentProfile        EquipmentProfile @relation(fields: [equipmentProfileId], references: [id])
+  executionProfileId      String
+  executionProfile        ExecutionProfile @relation(fields: [executionProfileId], references: [id])
+}
+
+model EquipmentProfile {
+  id                String             @id @default(cuid())
+  name              String             @unique
+  requiredEquipment String[]
+  exercises         ExerciseMetadata[]
+}
+
+model ExecutionProfile {
+  id          String             @id @default(cuid())
+  zone        String             @unique
+  description String
+  rpeRange    String
+  multiplier  Float
+  exercises   ExerciseMetadata[]
+}
+
+model SubstitutionPool {
+  id              String                     @id @default(cuid())
+  name            String                     @unique
+  primaryMuscle   String
+  movementPattern String
+  exercises       SubstitutionPoolExercise[]
+}
+
+model SubstitutionPoolExercise {
+  id               String           @id @default(cuid())
+  poolId           String
+  pool             SubstitutionPool @relation(fields: [poolId], references: [id])
+  exerciseId       String
+  exercise         Exercise         @relation(fields: [exerciseId], references: [id])
+  priority         Int
+  suitableWhenPain String[]
+
+  @@unique([poolId, exerciseId])
+}
+
+model WorkoutTemplate {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  splitType   String
+  daysPerWeek Int
+  splits      SplitConfig[]
+}
+
+model SplitConfig {
+  id         String          @id @default(cuid())
+  templateId String
+  template   WorkoutTemplate @relation(fields: [templateId], references: [id])
+  splitLabel String
+  days       SplitDay[]
+}
+
+model SplitDay {
+  id            String             @id @default(cuid())
+  splitConfigId String
+  splitConfig   SplitConfig        @relation(fields: [splitConfigId], references: [id])
+  dayNumber     Int
+  label         String
+  exercises     SplitDayExercise[]
+}
+
+model SplitDayExercise {
+  id          String   @id @default(cuid())
+  splitDayId  String
+  splitDay    SplitDay @relation(fields: [splitDayId], references: [id])
+  exerciseId  String
+  orderIndex  Int
+  setsTarget  Int
+  repRangeMin Int
+  repRangeMax Int
+}
