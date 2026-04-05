@@ -1,9 +1,23 @@
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
+import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProgressionEngineService } from '../progression-engine/progression-engine.service';
+import { ReadinessService } from '../readiness/readiness.service';
+import { GoalModeService } from '../goal-mode/goal-mode.service';
+import { WeeklyFeedbackService } from '../weekly-feedback/weekly-feedback.service';
 
 @Injectable()
 export class WorkoutsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private progressionEngine: ProgressionEngineService,
+    private readiness: ReadinessService,
+    private goalMode: GoalModeService,
+    private weeklyFeedback: WeeklyFeedbackService,
+    @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue
+  ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
     return this.prisma.workout.create({
@@ -34,6 +48,48 @@ export class WorkoutsService {
     });
   }
 
+  async getPrescription(userId: string, workoutId: string, exerciseId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const todaysReadiness = await this.readiness.getTodaysReadiness(userId);
+    const sessionReadiness = todaysReadiness?.sessionReadiness ?? 0.7;
+    const sessionMode = todaysReadiness?.sessionMode ?? 'FULL';
+
+    const goalModeParams = this.goalMode.getParameters(user.goalMode);
+
+    const weeklySignals = await this.weeklyFeedback.getSoftSignals(userId);
+
+    const exercise = await this.prisma.exercise.findUnique({
+  where: { id: exerciseId },
+});
+const sorenessScore = 0;
+
+    const lastSet = await this.prisma.set.findFirst({
+      where: { workoutId, exerciseId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const currentWeight = lastSet?.weight ?? 20;
+
+    const prescription = await this.progressionEngine.evaluate(
+      userId,
+      exerciseId,
+      currentWeight,
+      sessionReadiness,
+      sessionMode,
+      sorenessScore,
+      goalModeParams.incrementMultiplier,
+      weeklySignals,
+    );
+
+    return {
+      exerciseId,
+      sessionMode,
+      sessionReadiness,
+      ...prescription,
+    };
+  }
+
   async addSet(
     userId: string,
     workoutId: string,
@@ -50,7 +106,7 @@ export class WorkoutsService {
     const fatigueCost = weight * 0.01 * (rpe ? rpe / 10 : 0.7);
     const stimulusScore = effectiveReps * (e1rm / 100);
 
-    return this.prisma.set.create({
+    const set = await this.prisma.set.create({
       data: {
         workoutId,
         exerciseId,
@@ -64,6 +120,10 @@ export class WorkoutsService {
         stimulusScore,
       },
     });
+
+    await this.updatePerformanceHistory(userId, exerciseId, workoutId, weight, reps, e1rm);
+
+    return set;
   }
 
   async updateSet(
@@ -87,22 +147,79 @@ export class WorkoutsService {
     });
   }
 
-  async complete(userId: string, workoutId: string) {
-    const workout = await this.findOne(userId, workoutId);
+ async complete(userId: string, workoutId: string) {
+  const workout = await this.findOne(userId, workoutId);
 
-    const totalVolume = workout.sets.reduce(
-      (sum, s) => sum + s.weight * s.reps, 0,
-    );
-    const totalSets = workout.sets.length;
+  const totalVolume = workout.sets.reduce(
+    (sum, s) => sum + s.weight * s.reps, 0,
+  );
+  const totalSets = workout.sets.length;
 
-    return this.prisma.workout.update({
-      where: { id: workoutId },
-      data: {
-        status: 'COMPLETED',
-        completedAt: new Date(),
-        totalVolume,
-        totalSets,
-      },
+  const completed = await this.prisma.workout.update({
+    where: { id: workoutId },
+    data: {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+      totalVolume,
+      totalSets,
+    },
+  });
+
+  await this.e1rmQueue.add('rollup', { userId, workoutId });
+
+  return completed;
+}
+
+  private async updatePerformanceHistory(
+    userId: string,
+    exerciseId: string,
+    workoutId: string,
+    weight: number,
+    reps: number,
+    e1rm: number,
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const existing = await this.prisma.performanceHistory.findFirst({
+      where: { userId, exerciseId, date: { gte: today } },
     });
+
+    if (existing) {
+      if (e1rm > existing.bestE1rm) {
+        await this.prisma.performanceHistory.update({
+          where: { id: existing.id },
+          data: {
+            bestE1rm: e1rm,
+            bestWeight: weight,
+            bestReps: reps,
+            totalVolume: existing.totalVolume + weight * reps,
+            totalSets: existing.totalSets + 1,
+          },
+        });
+      } else {
+        await this.prisma.performanceHistory.update({
+          where: { id: existing.id },
+          data: {
+            totalVolume: existing.totalVolume + weight * reps,
+            totalSets: existing.totalSets + 1,
+          },
+        });
+      }
+    } else {
+      await this.prisma.performanceHistory.create({
+        data: {
+          userId,
+          exerciseId,
+          workoutId,
+          bestE1rm: e1rm,
+          bestWeight: weight,
+          bestReps: reps,
+          totalVolume: weight * reps,
+          totalSets: 1,
+          date: today,
+        },
+      });
+    }
   }
 }

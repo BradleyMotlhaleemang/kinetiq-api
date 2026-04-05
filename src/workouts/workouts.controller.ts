@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { WorkoutsService } from './workouts.service';
 
@@ -23,6 +23,15 @@ export class WorkoutsController {
   @Get(':id')
   findOne(@Request() req: any, @Param('id') id: string) {
     return this.workouts.findOne(req.user.userId, id);
+  }
+
+  @Get(':id/prescription')
+  getPrescription(
+    @Request() req: any,
+    @Param('id') workoutId: string,
+    @Query('exerciseId') exerciseId: string,
+  ) {
+    return this.workouts.getPrescription(req.user.userId, workoutId, exerciseId);
   }
 
   @Post(':id/sets')

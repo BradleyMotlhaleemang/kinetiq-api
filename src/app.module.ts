@@ -9,6 +9,11 @@ import { ExercisesModule } from './exercises/exercises.module';
 import { GoalModeModule } from './goal-mode/goal-mode.module';
 import { MesocyclesModule } from './mesocycles/mesocycles.module';
 import { WorkoutsModule } from './workouts/workouts.module';
+import { ReadinessModule } from './readiness/readiness.module';
+import { WeeklyFeedbackModule } from './weekly-feedback/weekly-feedback.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
+import { ProgressionEngineModule } from './progression-engine/progression-engine.module';
+import { WorkersModule } from './workers/workers.module';
 
 @Module({
   imports: [
@@ -27,6 +32,11 @@ import { WorkoutsModule } from './workouts/workouts.module';
     GoalModeModule,
     MesocyclesModule,
     WorkoutsModule,
+    ReadinessModule,
+    WeeklyFeedbackModule,
+    KnowledgeModule,
+    ProgressionEngineModule,
+    WorkersModule,
   ],
 })
 export class AppModule {}

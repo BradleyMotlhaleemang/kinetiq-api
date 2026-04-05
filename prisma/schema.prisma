@@ -25,6 +25,12 @@ model User {
   preferredTrainingTime String?
   mesocycles            Mesocycle[]
   workouts              Workout[]
+  sessionReadiness   SessionReadiness[]
+  weeklyFeedback     WeeklyFeedback[]
+  performanceHistory PerformanceHistory[]
+  progressionLogs    ProgressionLog[]
+  prRecords          PRRecord[]
+  plateauMarkers     PlateauMarker[]
 }
 
 model Exercise {
@@ -38,6 +44,10 @@ model Exercise {
   metadata         ExerciseMetadata?
   substitutionPools SubstitutionPoolExercise[]
   sets              Set[]
+  performanceHistory PerformanceHistory[]
+  progressionLogs    ProgressionLog[]
+  prRecords          PRRecord[]
+  plateauMarkers     PlateauMarker[]
 }
 
 model ExerciseMetadata {
@@ -138,6 +148,7 @@ model Mesocycle {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   workouts       Workout[]
+  weeklyFeedback     WeeklyFeedback[]
 }
 
 model Workout {
@@ -155,6 +166,9 @@ model Workout {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   sets               Set[]
+  sessionReadiness   SessionReadiness?
+  performanceHistory PerformanceHistory[]
+  prRecords          PRRecord[]
 }
 
 model Set {
@@ -175,4 +189,110 @@ model Set {
   prType           String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+model SessionReadiness {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  workoutId           String?  @unique
+  workout             Workout? @relation(fields: [workoutId], references: [id])
+  sleepScore          Int
+  stressScore         Int
+  nutritionScore      Int
+  motivationScore     Int
+  muscleReadinessScore Int
+  sessionReadiness    Float
+  sessionMode         String
+  createdAt           DateTime @default(now())
+}
+
+model WeeklyFeedback {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id])
+  mesocycleId        String?
+  mesocycle          Mesocycle? @relation(fields: [mesocycleId], references: [id])
+  weekNumber         Int
+  motivationScore    Int
+  fatiguePerception  Int
+  performanceFeeling Int
+  energyLevelAvg     Float?
+  sleepQualityAvg    Float?
+  stressLevelAvg     Float?
+  jointPainMap       Json?
+  notes              String?
+  loggedAt           DateTime  @default(now())
+
+  @@unique([userId, mesocycleId, weekNumber])
+}
+
+model KnowledgeEntry {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  category       String
+  title          String
+  summary        String
+  body           String
+  relatedSlugs   Json?
+  targetAudience String   @default("ALL")
+  tags           Json?
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model PerformanceHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  exerciseId  String
+  exercise    Exercise @relation(fields: [exerciseId], references: [id])
+  workoutId   String
+  workout     Workout  @relation(fields: [workoutId], references: [id])
+  bestE1rm    Float
+  bestWeight  Float
+  bestReps    Int
+  totalVolume Float
+  totalSets   Int
+  date        DateTime
+
+  @@unique([userId, exerciseId, date])
+}
+
+model ProgressionLog {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  exerciseId      String
+  exercise        Exercise @relation(fields: [exerciseId], references: [id])
+  action          String
+  weightTarget    Float?
+  reason          String
+  contextSnapshot Json?
+  loggedAt        DateTime @default(now())
+}
+
+model PRRecord {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  exerciseId  String
+  exercise    Exercise @relation(fields: [exerciseId], references: [id])
+  prType      String
+  value       Float
+  achievedAt  DateTime @default(now())
+  workoutId   String
+  workout     Workout  @relation(fields: [workoutId], references: [id])
+}
+
+model PlateauMarker {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  reason     String
+  createdAt  DateTime @default(now())
+  resolved   Boolean  @default(false)
 }
