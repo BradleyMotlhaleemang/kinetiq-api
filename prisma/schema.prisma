@@ -17,6 +17,14 @@ model User {
   refreshTokenHash String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  gender                String?
+  dateOfBirth           DateTime?
+  goalMode              String?
+  onboardingCompletedAt DateTime?
+  notificationsEnabled  Boolean   @default(true)
+  preferredTrainingTime String?
+  mesocycles            Mesocycle[]
+  workouts              Workout[]
 }
 
 model Exercise {
@@ -29,6 +37,7 @@ model Exercise {
   isCompound       Boolean                    @default(true)
   metadata         ExerciseMetadata?
   substitutionPools SubstitutionPoolExercise[]
+  sets              Set[]
 }
 
 model ExerciseMetadata {
@@ -114,4 +123,56 @@ model SplitDayExercise {
   setsTarget  Int
   repRangeMin Int
   repRangeMax Int
+}
+
+model Mesocycle {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id])
+  name           String
+  status         String     @default("ACTIVE")
+  currentWeek    Int        @default(1)
+  totalWeeks     Int        @default(8)
+  volumeTargets  Json
+  templateId     String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  workouts       Workout[]
+}
+
+model Workout {
+  id                 String           @id @default(cuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id])
+  mesocycleId        String?
+  mesocycle          Mesocycle?       @relation(fields: [mesocycleId], references: [id])
+  splitDayLabel      String?
+  status             String           @default("IN_PROGRESS")
+  totalVolume        Float?
+  totalSets          Int?
+  durationMinutes    Int?
+  completedAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  sets               Set[]
+}
+
+model Set {
+  id               String   @id @default(cuid())
+  workoutId        String
+  workout          Workout  @relation(fields: [workoutId], references: [id])
+  exerciseId       String
+  exercise         Exercise @relation(fields: [exerciseId], references: [id])
+  setNumber        Int
+  weight           Float
+  reps             Int
+  rpe              Float?
+  e1rm             Float?
+  effectiveReps    Float?
+  fatigueCost      Float?
+  stimulusScore    Float?
+  isPR             Boolean  @default(false)
+  prType           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
