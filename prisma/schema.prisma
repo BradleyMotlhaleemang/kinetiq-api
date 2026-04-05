@@ -31,6 +31,11 @@ model User {
   progressionLogs    ProgressionLog[]
   prRecords          PRRecord[]
   plateauMarkers     PlateauMarker[]
+  bioFeedback          BioFeedback[]
+  exerciseSubstitutions ExerciseSubstitution[]
+  bodyMetricLogs       BodyMetricLog[]
+  notifications        NotificationLog[]
+  fatigueSnapshots   FatigueSnapshot[]
 }
 
 model Exercise {
@@ -48,6 +53,8 @@ model Exercise {
   progressionLogs    ProgressionLog[]
   prRecords          PRRecord[]
   plateauMarkers     PlateauMarker[]
+  originalSubstitutions  ExerciseSubstitution[] @relation("OriginalExercise")
+  substituteSubstitutions ExerciseSubstitution[] @relation("SubstituteExercise")
 }
 
 model ExerciseMetadata {
@@ -169,6 +176,7 @@ model Workout {
   sessionReadiness   SessionReadiness?
   performanceHistory PerformanceHistory[]
   prRecords          PRRecord[]
+  bioFeedback          BioFeedback?
 }
 
 model Set {
@@ -295,4 +303,74 @@ model PlateauMarker {
   reason     String
   createdAt  DateTime @default(now())
   resolved   Boolean  @default(false)
+}
+
+model BioFeedback {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  workoutId        String?  @unique
+  workout          Workout? @relation(fields: [workoutId], references: [id])
+  sorenessLog      Json
+  jointPainLog     Json
+  energyLevel      Int
+  strengthRating   Int
+  muscleFeel       Int
+  sleepLastNight   Int
+  overallWellbeing Int
+  loggedAt         DateTime @default(now())
+}
+
+model ExerciseSubstitution {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  originalExerciseId String
+  originalExercise   Exercise @relation("OriginalExercise", fields: [originalExerciseId], references: [id])
+  substituteExerciseId String
+  substituteExercise   Exercise @relation("SubstituteExercise", fields: [substituteExerciseId], references: [id])
+  jointAffected      String
+  painScoreAtSwap    Float
+  status             String   @default("ACTIVE")
+  phase              Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model BodyMetricLog {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  weightKg      Float
+  bodyFatPercent Float?
+  trend         String?
+  rollingAvg7d  Float?
+  loggedAt      DateTime @default(now())
+}
+
+model NotificationLog {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  type            String
+  deliveryChannel String   @default("IN_APP")
+  payload         Json?
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+  createdAt       DateTime @default(now())
+
+}
+model FatigueSnapshot {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  snapshotAt         DateTime @default(now())
+  sfl24h             Float
+  sfl48h             Float
+  sfl72h             Float
+  sfl7d              Float
+  cnsLoadScore       Float
+  metabolicLoadScore Float
+  muscleFatigueMap   Json
+  jointStressMap     Json
 }

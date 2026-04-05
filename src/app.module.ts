@@ -14,6 +14,10 @@ import { WeeklyFeedbackModule } from './weekly-feedback/weekly-feedback.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { ProgressionEngineModule } from './progression-engine/progression-engine.module';
 import { WorkersModule } from './workers/workers.module';
+import { BiofeedbackModule } from './biofeedback/biofeedback.module';
+import { BodyMetricsModule } from './body-metrics/body-metrics.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { SubstitutionEngineModule } from './substitution-engine/substitution-engine.module';
 
 @Module({
   imports: [
@@ -37,6 +41,10 @@ import { WorkersModule } from './workers/workers.module';
     KnowledgeModule,
     ProgressionEngineModule,
     WorkersModule,
+    BiofeedbackModule,
+    BodyMetricsModule,
+    NotificationsModule,
+    SubstitutionEngineModule,
   ],
 })
 export class AppModule {}

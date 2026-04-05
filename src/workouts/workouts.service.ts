@@ -7,6 +7,7 @@ import { ProgressionEngineService } from '../progression-engine/progression-engi
 import { ReadinessService } from '../readiness/readiness.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { WeeklyFeedbackService } from '../weekly-feedback/weekly-feedback.service';
+import { BiofeedbackService } from '../biofeedback/biofeedback.service';
 
 @Injectable()
 export class WorkoutsService {
@@ -16,6 +17,7 @@ export class WorkoutsService {
     private readiness: ReadinessService,
     private goalMode: GoalModeService,
     private weeklyFeedback: WeeklyFeedbackService,
+    private biofeedback: BiofeedbackService,
     @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue
   ) {}
 
@@ -63,7 +65,11 @@ export class WorkoutsService {
     const exercise = await this.prisma.exercise.findUnique({
   where: { id: exerciseId },
 });
-const sorenessScore = 0;
+
+const recentBiofeedback = await this.biofeedback.get48hrOffset(userId);
+const sorenessLog = recentBiofeedback?.sorenessLog as Record<string, number> | null;
+const primaryMuscle = exercise?.primaryMuscle ?? '';
+const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
 
     const lastSet = await this.prisma.set.findFirst({
       where: { workoutId, exerciseId },
