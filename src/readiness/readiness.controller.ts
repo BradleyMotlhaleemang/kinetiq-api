@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ReadinessService } from './readiness.service';
+import { transformReadiness } from '../common/transforms';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('readiness')
@@ -8,7 +9,7 @@ export class ReadinessController {
   constructor(private readiness: ReadinessService) {}
 
   @Post('check-in')
-  checkIn(
+  async checkIn(
     @Request() req: any,
     @Body() body: {
       sleepScore: number;
@@ -19,7 +20,7 @@ export class ReadinessController {
       workoutId?: string;
     },
   ) {
-    return this.readiness.checkIn(
+    const result = await this.readiness.checkIn(
       req.user.userId,
       body.sleepScore,
       body.stressScore,
@@ -28,15 +29,18 @@ export class ReadinessController {
       body.muscleReadinessScore,
       body.workoutId,
     );
+    return transformReadiness(result);
   }
 
   @Get('latest')
-  getLatest(@Request() req: any) {
-    return this.readiness.getLatest(req.user.userId);
+  async getLatest(@Request() req: any) {
+    const result = await this.readiness.getLatest(req.user.userId);
+    return transformReadiness(result);
   }
 
   @Get('history')
-  getHistory(@Request() req: any) {
-    return this.readiness.getHistory(req.user.userId);
+  async getHistory(@Request() req: any) {
+    const results = await this.readiness.getHistory(req.user.userId);
+    return results.map(transformReadiness);
   }
 }

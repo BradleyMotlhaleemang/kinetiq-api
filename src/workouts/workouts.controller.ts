@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { WorkoutsService } from './workouts.service';
+import { transformWorkout, transformPrescription } from '../common/transforms';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('workouts')
@@ -8,30 +9,34 @@ export class WorkoutsController {
   constructor(private workouts: WorkoutsService) {}
 
   @Post()
-  create(
+  async create(
     @Request() req: any,
     @Body() body: { mesocycleId?: string; splitDayLabel?: string },
   ) {
-    return this.workouts.create(req.user.userId, body.mesocycleId, body.splitDayLabel);
+    const workout = await this.workouts.create(req.user.userId, body.mesocycleId, body.splitDayLabel);
+    return transformWorkout(workout);
   }
 
   @Get('history')
-  history(@Request() req: any) {
-    return this.workouts.findHistory(req.user.userId);
+  async history(@Request() req: any) {
+    const workouts = await this.workouts.findHistory(req.user.userId);
+    return workouts.map(transformWorkout);
   }
 
   @Get(':id')
-  findOne(@Request() req: any, @Param('id') id: string) {
-    return this.workouts.findOne(req.user.userId, id);
+  async findOne(@Request() req: any, @Param('id') id: string) {
+    const workout = await this.workouts.findOne(req.user.userId, id);
+    return transformWorkout(workout);
   }
 
   @Get(':id/prescription')
-  getPrescription(
+  async getPrescription(
     @Request() req: any,
     @Param('id') workoutId: string,
     @Query('exerciseId') exerciseId: string,
   ) {
-    return this.workouts.getPrescription(req.user.userId, workoutId, exerciseId);
+    const prescription = await this.workouts.getPrescription(req.user.userId, workoutId, exerciseId);
+    return transformPrescription(prescription);
   }
 
   @Post(':id/sets')
@@ -75,7 +80,8 @@ export class WorkoutsController {
   }
 
   @Patch(':id/complete')
-  complete(@Request() req: any, @Param('id') id: string) {
-    return this.workouts.complete(req.user.userId, id);
+  async complete(@Request() req: any, @Param('id') id: string) {
+    const workout = await this.workouts.complete(req.user.userId, id);
+    return transformWorkout(workout);
   }
 }

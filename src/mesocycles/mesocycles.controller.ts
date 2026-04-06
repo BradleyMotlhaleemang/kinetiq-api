@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { MesocyclesService } from './mesocycles.service';
+import { transformMesocycle } from '../common/transforms';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('mesocycles')
@@ -8,26 +9,30 @@ export class MesocyclesController {
   constructor(private mesocycles: MesocyclesService) {}
 
   @Post('generate')
-  generate(
+  async generate(
     @Request() req: any,
     @Body() body: { name: string; totalWeeks: number; templateId?: string },
   ) {
-    return this.mesocycles.generate(req.user.userId, body.name, body.totalWeeks, body.templateId);
+    const result = await this.mesocycles.generate(req.user.userId, body.name, body.totalWeeks, body.templateId);
+    return transformMesocycle(result);
   }
 
   @Get('active')
-  findActive(@Request() req: any) {
-    return this.mesocycles.findActive(req.user.userId);
+  async findActive(@Request() req: any) {
+    const result = await this.mesocycles.findActive(req.user.userId);
+    return transformMesocycle(result);
   }
 
   @Get(':id')
-  findOne(@Request() req: any, @Param('id') id: string) {
-    return this.mesocycles.findOne(req.user.userId, id);
+  async findOne(@Request() req: any, @Param('id') id: string) {
+    const result = await this.mesocycles.findOne(req.user.userId, id);
+    return transformMesocycle(result);
   }
 
   @Patch(':id/close')
-  close(@Request() req: any, @Param('id') id: string) {
-    return this.mesocycles.close(req.user.userId, id);
+  async close(@Request() req: any, @Param('id') id: string) {
+    const result = await this.mesocycles.close(req.user.userId, id);
+    return transformMesocycle(result);
   }
 
   @Get(':id/volume-status')
