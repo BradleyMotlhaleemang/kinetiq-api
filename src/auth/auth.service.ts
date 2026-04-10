@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcrypt';
@@ -11,10 +11,14 @@ export class AuthService {
     private jwt: JwtService,
   ) {}
 
-  async register(email: string, password: string, displayName: string) {
-    const user = await this.users.create(email, password, displayName);
-    return this.signTokens(user.id, user.email);
+ async register(email: string, password: string, displayName: string) {
+  const existing = await this.users.findByEmail(email);
+  if (existing) {
+    throw new ConflictException('An account with this email already exists');
   }
+  const user = await this.users.create(email, password, displayName);
+  return this.signTokens(user.id, user.email);
+}
 
   async login(email: string, password: string) {
     const user = await this.users.findByEmail(email);
