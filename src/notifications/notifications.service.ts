@@ -52,12 +52,37 @@ export class NotificationsService {
     });
   }
 
-  async getFeed(userId: string) {
-    return this.prisma.notificationLog.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
+  async getFeed(
+    userId: string,
+    options?: { isRead?: boolean; pageSize?: number; pageNumber?: number },
+  ) {
+    const pageSize = options?.pageSize ?? 20;
+    const pageNumber = options?.pageNumber ?? 1;
+
+    const where = {
+      userId,
+      ...(options?.isRead !== undefined && { isRead: options.isRead }),
+    };
+
+    const [notifications, total] = await Promise.all([
+      this.prisma.notificationLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: pageSize,
+        skip: (pageNumber - 1) * pageSize,
+      }),
+      this.prisma.notificationLog.count({ where }),
+    ]);
+
+    return {
+      data: notifications,
+      meta: {
+        total,
+        pageNumber,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 
   async getUnreadCount(userId: string) {
@@ -72,5 +97,26 @@ export class NotificationsService {
       where: { id },
       data: { isRead: true, readAt: new Date() },
     });
+  }
+
+  async markAllRead(userId: string) {
+    const result = await this.prisma.notificationLog.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+    return { updated: result.count };
+  }
+
+  getRedirectRoute(type: string): string {
+    const routes: Record<string, string> = {
+      BIOFEEDBACK_PROMPT: '/biofeedback',
+      RECOVERY_WARNING: '/dashboard',
+      PAIN_REVIEW_PROMPT: '/substitutions',
+      WORKOUT_REMINDER: '/dashboard',
+      WEEKLY_FEEDBACK_PROMPT: '/weekly-feedback',
+      MEAL_REMINDER: '/nutrition',
+      WEIGHT_LOG_REMINDER: '/profile',
+    };
+    return routes[type] ?? '/dashboard';
   }
 }

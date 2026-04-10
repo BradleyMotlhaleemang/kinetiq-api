@@ -1,4 +1,7 @@
-import { Controller, Get, Patch, Param, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller, Get, Patch, Param,
+  UseGuards, Request, Query
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotificationsService } from './notifications.service';
 
@@ -8,13 +11,35 @@ export class NotificationsController {
   constructor(private notifications: NotificationsService) {}
 
   @Get()
-  getFeed(@Request() req: any) {
-    return this.notifications.getFeed(req.user.userId);
+  async getFeed(
+    @Request() req: any,
+    @Query('isRead') isRead?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('pageNumber') pageNumber?: string,
+  ) {
+    const result = await this.notifications.getFeed(req.user.userId, {
+      isRead: isRead === undefined ? undefined : isRead === 'true',
+      pageSize: pageSize ? parseInt(pageSize) : undefined,
+      pageNumber: pageNumber ? parseInt(pageNumber) : undefined,
+    });
+
+    return {
+      ...result,
+      data: result.data.map((n) => ({
+        ...n,
+        redirectRoute: this.notifications.getRedirectRoute(n.type),
+      })),
+    };
   }
 
   @Get('unread-count')
   getUnreadCount(@Request() req: any) {
     return this.notifications.getUnreadCount(req.user.userId);
+  }
+
+  @Patch('read-all')
+  markAllRead(@Request() req: any) {
+    return this.notifications.markAllRead(req.user.userId);
   }
 
   @Patch(':id/read')
