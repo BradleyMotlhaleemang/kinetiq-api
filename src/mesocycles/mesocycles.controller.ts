@@ -1,12 +1,37 @@
 import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { MesocyclesService } from './mesocycles.service';
-import { transformMesocycle } from '../common/transforms';
+import {
+  EXPERIENCE_LEVEL_LABELS,
+  GOAL_MODE_LABELS,
+  transformMesocycle,
+  transformWorkoutTemplate,
+} from '../common/transforms';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('mesocycles')
 export class MesocyclesController {
   constructor(private mesocycles: MesocyclesService) {}
+
+  @Get('recommend')
+  async recommend(@Request() req: any) {
+    const result = await this.mesocycles.recommendTemplate(req.user.userId);
+
+    return {
+      recommended: transformWorkoutTemplate(result.recommended),
+      alternatives: result.alternatives.map(transformWorkoutTemplate),
+      rationale: result.rationale,
+      profile: {
+        goalModeLabel: result.profile.goalMode
+          ? GOAL_MODE_LABELS[result.profile.goalMode] ?? result.profile.goalMode
+          : null,
+        experienceLevelLabel: result.profile.experienceLevel
+          ? EXPERIENCE_LEVEL_LABELS[result.profile.experienceLevel] ??
+            result.profile.experienceLevel
+          : null,
+      },
+    };
+  }
 
   @Post('generate')
   async generate(

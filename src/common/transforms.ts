@@ -43,6 +43,12 @@ export const EXPERIENCE_LEVEL_LABELS: Record<string, string> = {
   ADVANCED: 'Advanced',
 };
 
+export const WORKOUT_TEMPLATE_SPLIT_LABELS: Record<string, string> = {
+  PPL: 'Push Pull Legs',
+  UPPER_LOWER: 'Upper Lower',
+  FULL_BODY: 'Full Body',
+};
+
 export function transformUser(user: any) {
   if (!user) return null;
   return {
@@ -94,5 +100,14 @@ export function transformPrescription(prescription: any) {
       SESSION_MODE_LABELS[prescription.sessionMode] ?? prescription.sessionMode,
     sessionModeColor:
       SESSION_MODE_COLORS[prescription.sessionMode] ?? 'gray',
+  };
+}
+
+export function transformWorkoutTemplate(template: any) {
+  if (!template) return null;
+  return {
+    ...template,
+    splitTypeLabel:
+      WORKOUT_TEMPLATE_SPLIT_LABELS[template.splitType] ?? template.splitType,
   };
 }

@@ -7,6 +7,7 @@ import { GoalModeModule } from '../goal-mode/goal-mode.module';
 import { WeeklyFeedbackModule } from '../weekly-feedback/weekly-feedback.module';
 import { WorkersModule } from '../workers/workers.module';
 import { BiofeedbackModule } from '../biofeedback/biofeedback.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { BullModule } from '@nestjs/bull';
 import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
 
@@ -18,6 +19,7 @@ import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
     WeeklyFeedbackModule,
     WorkersModule,
     BiofeedbackModule,
+    NotificationsModule,
     BullModule.registerQueue({ name: E1RM_ROLLUP_QUEUE }),
   ],
   providers: [WorkoutsService],

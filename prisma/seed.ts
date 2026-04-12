@@ -9,6 +9,27 @@ const adapter = new PrismaPg({
 })
 const prisma = new PrismaClient({ adapter } as any)
 
+type TemplateExerciseSeed = {
+  name: string
+  setsTarget: number
+  repRangeMin: number
+  repRangeMax: number
+}
+
+type TemplateDaySeed = {
+  dayNumber: number
+  label: string
+  exercises: TemplateExerciseSeed[]
+}
+
+type WorkoutTemplateSeed = {
+  name: string
+  splitType: string
+  daysPerWeek: number
+  splitLabel: string
+  days: TemplateDaySeed[]
+}
+
 async function main() {
   const barbell = await prisma.equipmentProfile.upsert({
     where: { name: 'BARBELL' },
@@ -176,6 +197,291 @@ async function main() {
         methodFatigueMultiplier: ex.methodFatigueMultiplier,
         equipmentProfileId: ex.equipment.id,
         executionProfileId: ex.execution.id,
+      },
+    })
+  }
+
+  const workoutTemplates: WorkoutTemplateSeed[] = [
+    {
+      name: 'Push Pull Legs',
+      splitType: 'PPL',
+      daysPerWeek: 6,
+      splitLabel: 'PPL 6-Day',
+      days: [
+        {
+          dayNumber: 1,
+          label: 'Day 1 - Push',
+          exercises: [
+            { name: 'Barbell Bench Press', setsTarget: 3, repRangeMin: 6, repRangeMax: 8 },
+            { name: 'Dumbbell Incline Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 10 },
+            { name: 'Machine Shoulder Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 10 },
+            { name: 'Cable Lateral Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Cable Rope Pushdown', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 2,
+          label: 'Day 2 - Pull',
+          exercises: [
+            { name: 'Lat Pulldown', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Chest-Supported Row', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Face Pull', setsTarget: 3, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Incline Dumbbell Curl', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Cable Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 3,
+          label: 'Day 3 - Legs',
+          exercises: [
+            { name: 'Barbell Back Squat', setsTarget: 3, repRangeMin: 5, repRangeMax: 8 },
+            { name: 'Romanian Deadlift', setsTarget: 3, repRangeMin: 6, repRangeMax: 10 },
+            { name: 'Leg Press', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Leg Extension', setsTarget: 2, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Seated Leg Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Seated Calf Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+          ],
+        },
+        {
+          dayNumber: 4,
+          label: 'Day 4 - Push',
+          exercises: [
+            { name: 'Machine Chest Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Barbell Overhead Press', setsTarget: 3, repRangeMin: 6, repRangeMax: 8 },
+            { name: 'Pec Deck', setsTarget: 3, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Dumbbell Lateral Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Overhead Tricep Extension', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 5,
+          label: 'Day 5 - Pull',
+          exercises: [
+            { name: 'Barbell Row', setsTarget: 3, repRangeMin: 6, repRangeMax: 10 },
+            { name: 'Wide Grip Lat Pulldown', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Rear Delt Machine Fly', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Hammer Curl', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Cable Rope Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 6,
+          label: 'Day 6 - Legs',
+          exercises: [
+            { name: 'Hack Squat', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Hip Thrust', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Bulgarian Split Squat', setsTarget: 2, repRangeMin: 10, repRangeMax: 12 },
+            { name: 'Leg Curl', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Calf Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Upper Lower',
+      splitType: 'UPPER_LOWER',
+      daysPerWeek: 4,
+      splitLabel: 'Upper Lower 4-Day',
+      days: [
+        {
+          dayNumber: 1,
+          label: 'Day 1 - Upper',
+          exercises: [
+            { name: 'Barbell Bench Press', setsTarget: 3, repRangeMin: 6, repRangeMax: 8 },
+            { name: 'Chest-Supported Row', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Lat Pulldown', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Dumbbell Shoulder Press', setsTarget: 2, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Cable Lateral Raise', setsTarget: 2, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Tricep Pushdown', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Barbell Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 2,
+          label: 'Day 2 - Lower',
+          exercises: [
+            { name: 'Barbell Back Squat', setsTarget: 3, repRangeMin: 5, repRangeMax: 8 },
+            { name: 'Romanian Deadlift', setsTarget: 3, repRangeMin: 6, repRangeMax: 10 },
+            { name: 'Leg Press', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Leg Extension', setsTarget: 2, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Seated Leg Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Seated Calf Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+          ],
+        },
+        {
+          dayNumber: 3,
+          label: 'Day 3 - Upper',
+          exercises: [
+            { name: 'Machine Incline Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Barbell Row', setsTarget: 3, repRangeMin: 6, repRangeMax: 10 },
+            { name: 'Wide Grip Lat Pulldown', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Arnold Press', setsTarget: 2, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Face Pull', setsTarget: 2, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Overhead Tricep Extension', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Hammer Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 4,
+          label: 'Day 4 - Lower',
+          exercises: [
+            { name: 'Hack Squat', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Hip Thrust', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Bulgarian Split Squat', setsTarget: 2, repRangeMin: 10, repRangeMax: 12 },
+            { name: 'Leg Curl', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Cable Kickback', setsTarget: 2, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Calf Raise', setsTarget: 3, repRangeMin: 12, repRangeMax: 20 },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'Full Body',
+      splitType: 'FULL_BODY',
+      daysPerWeek: 3,
+      splitLabel: 'Full Body 3-Day',
+      days: [
+        {
+          dayNumber: 1,
+          label: 'Day 1 - Full Body',
+          exercises: [
+            { name: 'Barbell Back Squat', setsTarget: 3, repRangeMin: 5, repRangeMax: 8 },
+            { name: 'Barbell Bench Press', setsTarget: 3, repRangeMin: 6, repRangeMax: 8 },
+            { name: 'Lat Pulldown', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Dumbbell Lateral Raise', setsTarget: 2, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Cable Rope Pushdown', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Dumbbell Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 2,
+          label: 'Day 2 - Full Body',
+          exercises: [
+            { name: 'Romanian Deadlift', setsTarget: 3, repRangeMin: 6, repRangeMax: 10 },
+            { name: 'Dumbbell Incline Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 10 },
+            { name: 'Cable Row', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Leg Extension', setsTarget: 2, repRangeMin: 12, repRangeMax: 15 },
+            { name: 'Face Pull', setsTarget: 2, repRangeMin: 12, repRangeMax: 20 },
+            { name: 'Hammer Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+        {
+          dayNumber: 3,
+          label: 'Day 3 - Full Body',
+          exercises: [
+            { name: 'Leg Press', setsTarget: 3, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Machine Chest Press', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Chest-Supported Row', setsTarget: 3, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Machine Shoulder Press', setsTarget: 2, repRangeMin: 8, repRangeMax: 12 },
+            { name: 'Seated Leg Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Tricep Pushdown', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+            { name: 'Cable Curl', setsTarget: 2, repRangeMin: 10, repRangeMax: 15 },
+          ],
+        },
+      ],
+    },
+  ]
+
+  const templateExerciseNames = Array.from(new Set(
+    workoutTemplates.flatMap((template) =>
+      template.days.flatMap((day) => day.exercises.map((exercise) => exercise.name)),
+    ),
+  ))
+
+  const templateExercises = await prisma.exercise.findMany({
+    where: {
+      name: {
+        in: templateExerciseNames,
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  })
+
+  const exerciseIdByName = new Map(templateExercises.map((exercise) => [exercise.name, exercise.id]))
+  const missingExercises = templateExerciseNames.filter((name) => !exerciseIdByName.has(name))
+
+  if (missingExercises.length > 0) {
+    throw new Error(`Missing template exercises: ${missingExercises.join(', ')}`)
+  }
+
+  for (const templateSeed of workoutTemplates) {
+    const template = await prisma.workoutTemplate.upsert({
+      where: { name: templateSeed.name },
+      update: {
+        splitType: templateSeed.splitType,
+        daysPerWeek: templateSeed.daysPerWeek,
+      },
+      create: {
+        name: templateSeed.name,
+        splitType: templateSeed.splitType,
+        daysPerWeek: templateSeed.daysPerWeek,
+      },
+    })
+
+    const existingSplitConfigs = await prisma.splitConfig.findMany({
+      where: { templateId: template.id },
+      select: { id: true },
+    })
+
+    const existingSplitConfigIds = existingSplitConfigs.map((splitConfig) => splitConfig.id)
+
+    if (existingSplitConfigIds.length > 0) {
+      const existingSplitDays = await prisma.splitDay.findMany({
+        where: {
+          splitConfigId: {
+            in: existingSplitConfigIds,
+          },
+        },
+        select: { id: true },
+      })
+
+      const existingSplitDayIds = existingSplitDays.map((splitDay) => splitDay.id)
+
+      if (existingSplitDayIds.length > 0) {
+        await prisma.splitDayExercise.deleteMany({
+          where: {
+            splitDayId: {
+              in: existingSplitDayIds,
+            },
+          },
+        })
+      }
+
+      await prisma.splitDay.deleteMany({
+        where: {
+          splitConfigId: {
+            in: existingSplitConfigIds,
+          },
+        },
+      })
+
+      await prisma.splitConfig.deleteMany({
+        where: { templateId: template.id },
+      })
+    }
+
+    await prisma.splitConfig.create({
+      data: {
+        templateId: template.id,
+        splitLabel: templateSeed.splitLabel,
+        days: {
+          create: templateSeed.days.map((day) => ({
+            dayNumber: day.dayNumber,
+            label: day.label,
+            exercises: {
+              create: day.exercises.map((exercise, index) => ({
+                exerciseId: exerciseIdByName.get(exercise.name)!,
+                orderIndex: index + 1,
+                setsTarget: exercise.setsTarget,
+                repRangeMin: exercise.repRangeMin,
+                repRangeMax: exercise.repRangeMax,
+              })),
+            },
+          })),
+        },
       },
     })
   }

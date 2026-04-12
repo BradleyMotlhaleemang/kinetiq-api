@@ -8,6 +8,7 @@ import { ReadinessService } from '../readiness/readiness.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { WeeklyFeedbackService } from '../weekly-feedback/weekly-feedback.service';
 import { BiofeedbackService } from '../biofeedback/biofeedback.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class WorkoutsService {
@@ -18,6 +19,7 @@ export class WorkoutsService {
     private goalMode: GoalModeService,
     private weeklyFeedback: WeeklyFeedbackService,
     private biofeedback: BiofeedbackService,
+    private notifications: NotificationsService,
     @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue
   ) {}
 
@@ -172,6 +174,10 @@ const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
   });
 
   await this.e1rmQueue.add('rollup', { userId, workoutId });
+
+  await this.notifications.create(userId, 'BIOFEEDBACK_PROMPT', {
+    workoutId,
+  });
 
   return completed;
 }
