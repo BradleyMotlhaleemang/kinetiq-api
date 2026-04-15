@@ -23,4 +23,21 @@ export class AuthController {
   me(@Request() req: any) {
     return req.user;
   }
+
+@Post('forgot-password')
+async forgotPassword(@Body() body: { email: string }) {
+  await this.auth.forgotPassword(body.email);
+  return { message: 'If that email is registered, you will receive a reset link shortly.' };
+}
+
+@Post('reset-password')
+async resetPassword(@Body() body: { token: string; newPassword: string }) {
+  try {
+    await this.auth.resetPassword(body.token, body.newPassword);
+    return { message: 'Password updated successfully.' };
+  } catch {
+    throw new Error('Reset link is invalid or has expired.');
+  }
+}
+
 }

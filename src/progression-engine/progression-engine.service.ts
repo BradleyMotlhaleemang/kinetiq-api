@@ -14,18 +14,16 @@ export class ProgressionEngineService {
   constructor(private prisma: PrismaService) {}
 
   async evaluate(
-    userId: string,
-    exerciseId: string,
-    currentWeight: number,
-    sessionReadiness: number,
-    sessionMode: string,
-    sorenessScore: number,
-    goalModeMultiplier: number,
-    weeklyFeedbackSignals?: {
-      lowMotivationStreak: number;
-      highFatigueAndHighSfl: boolean;
-    },
-  ): Promise<ProgressionResult> {
+     userId: string,
+  exerciseId: string,
+  currentWeight: number,
+  sessionReadiness: number,
+  sessionMode: string,
+  sorenessScore: number,
+  goalModeMultiplier: number,
+  weeklyFeedbackSignals?: { lowMotivationStreak: number; highFatigueAndHighSfl: boolean },
+  muscleGroupFeedback?: { sorenessScore: number; pumpScore: number; volumeSignal: number; jointPainScore: number } | null,
+): Promise<ProgressionResult> {
     // ── STEP 1: Readiness override ─────────────────────────────
     if (sessionReadiness < 0.4 || sessionMode === 'DELOAD') {
       const result: ProgressionResult = {
@@ -48,14 +46,24 @@ export class ProgressionEngineService {
       return result;
     }
 
-    // ── STEP 3: Soreness gate ──────────────────────────────────
-    if (sorenessScore >= 6) {
+    // Step 3 — use muscleGroupFeedback sorenessScore if available
+    const effectiveSoreness = muscleGroupFeedback?.sorenessScore ?? sorenessScore;
+    if (effectiveSoreness >= 8) {
       const result: ProgressionResult = {
         action: 'HOLD',
         weightTarget: currentWeight,
-        reason: `Soreness score ${sorenessScore} — holding load`,
+        reason: `Soreness score ${effectiveSoreness} — still sore, holding load`,
       };
-      await this.writeLog(userId, exerciseId, result, sessionReadiness, sorenessScore);
+      await this.writeLog(userId, exerciseId, result, sessionReadiness, effectiveSoreness);
+      return result;
+    }
+    if (effectiveSoreness >= 5) {
+      const result: ProgressionResult = {
+        action: 'HOLD',
+        weightTarget: currentWeight,
+        reason: `Soreness score ${effectiveSoreness} — healed on time, holding load`,
+      };
+      await this.writeLog(userId, exerciseId, result, sessionReadiness, effectiveSoreness);
       return result;
     }
 
@@ -110,11 +118,18 @@ export class ProgressionEngineService {
     }
 
     // ── STEP 6: Authorise progression ─────────────────────────
+    const volumeModifier = muscleGroupFeedback
+      ? muscleGroupFeedback.volumeSignal === 1 ? 1.2
+        : muscleGroupFeedback.volumeSignal === -1 ? 0.7
+        : muscleGroupFeedback.volumeSignal === 0 && muscleGroupFeedback.pumpScore <= 2 ? 0.9
+        : 1.0
+      : 1.0;
+
     const increment = history.length === 0 ? 2.5 : this.calculateIncrement(
       currentWeight,
       goalModeMultiplier,
       sessionReadiness,
-    );
+    ) * volumeModifier;
 
     const newWeight = Math.round((currentWeight + increment) * 2) / 2;
 
@@ -124,6 +139,7 @@ export class ProgressionEngineService {
       reason: `All gates passed — progressing by ${increment}kg`,
     };
     await this.writeLog(userId, exerciseId, result, sessionReadiness, sorenessScore);
+    await this.checkAndWritePR(userId, exerciseId, currentWeight, newWeight);
     return result;
   }
 
@@ -154,5 +170,36 @@ export class ProgressionEngineService {
         contextSnapshot: { sessionReadiness, sorenessScore } as any,
       },
     });
+  }
+
+  private async checkAndWritePR(
+    userId: string,
+    exerciseId: string,
+    currentWeight: number,
+    proposedWeight: number,
+  ) {
+    const bestRecord = await this.prisma.pRRecord.findFirst({
+      where: { userId, exerciseId, prType: 'WEIGHT' },
+      orderBy: { value: 'desc' },
+    });
+
+    if (!bestRecord || proposedWeight > bestRecord.value) {
+      const latestWorkout = await this.prisma.workout.findFirst({
+        where: { userId, status: 'COMPLETED' },
+        orderBy: { completedAt: 'desc' },
+      });
+
+      if (latestWorkout) {
+        await this.prisma.pRRecord.create({
+          data: {
+            userId,
+            exerciseId,
+            prType: 'WEIGHT',
+            value: proposedWeight,
+            workoutId: latestWorkout.id,
+          },
+        });
+      }
+    }
   }
 }

@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bull';
 import { E1rmRollupWorker, E1RM_ROLLUP_QUEUE } from './e1rm-rollup.worker';
 import { SflDailyUpdateWorker, SFL_DAILY_UPDATE_QUEUE } from './sfl-daily-update.worker';
 import { SfrWorker, SFR_QUEUE } from './sfr.worker';
+import { MesocycleAdvanceWorker } from './mesocycle-advance.worker';
 
 @Module({
   imports: [
@@ -12,7 +13,7 @@ import { SfrWorker, SFR_QUEUE } from './sfr.worker';
       { name: SFR_QUEUE },
     ),
   ],
-  providers: [E1rmRollupWorker, SflDailyUpdateWorker, SfrWorker],
+  providers: [E1rmRollupWorker, SflDailyUpdateWorker, SfrWorker, MesocycleAdvanceWorker],
   exports: [BullModule],
 })
 export class WorkersModule {}

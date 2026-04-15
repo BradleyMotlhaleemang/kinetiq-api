@@ -43,6 +43,9 @@ model User {
   exerciseSFRs     UserExerciseSFR[]
   restPreferences  RestPreference[]
   setRestLogs      SetRestLog[]
+  passwordResetToken       String?
+passwordResetTokenExpiry DateTime?
+muscleGroupFeedback MuscleGroupFeedback[]
 }
 
 model Exercise {
@@ -328,6 +331,7 @@ model BioFeedback {
   sleepLastNight   Int
   overallWellbeing Int
   loggedAt         DateTime @default(now())
+  muscleGroupFeedback MuscleGroupFeedback[]
 }
 
 model ExerciseSubstitution {
@@ -489,4 +493,30 @@ model SetRestLog {
   previousSetId   String?
   actualRestSeconds Int
   loggedAt        DateTime @default(now())
+}
+
+model MuscleGroupFeedback {
+  id            String      @id @default(cuid())
+  bioFeedbackId String
+  bioFeedback   BioFeedback @relation(fields: [bioFeedbackId], references: [id])
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  workoutId     String
+  muscleGroup   String
+
+  jointPain      String
+  jointPainScore Int
+
+  soreness       String
+  sorenessScore  Float
+
+  pump           String
+  pumpScore      Float
+
+  volume         String
+  volumeSignal   Float
+
+  loggedAt       DateTime @default(now())
+
+  @@unique([bioFeedbackId, muscleGroup])
 }

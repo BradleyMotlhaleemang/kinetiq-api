@@ -1,6 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+const JOINT_PAIN_MAP: Record<string, { score: number }> = {
+  NONE:     { score: 0 },
+  LOW:      { score: 1 },
+  MODERATE: { score: 2 },
+  HIGH:     { score: 3 },
+};
+
+const SORENESS_MAP: Record<string, { score: number }> = {
+  NEVER_SORE:       { score: 0 },
+  HEALED_LONG_AGO:  { score: 2 },
+  HEALED_ON_TIME:   { score: 5 },
+  STILL_SORE:       { score: 8 },
+};
+
+const PUMP_MAP: Record<string, { score: number }> = {
+  LOW:      { score: 2 },
+  MODERATE: { score: 5 },
+  AMAZING:  { score: 9 },
+};
+
+const VOLUME_MAP: Record<string, { signal: number }> = {
+  NOT_ENOUGH:    { signal: 1 },
+  JUST_RIGHT:    { signal: 0 },
+  PUSHED_LIMITS: { signal: 0 },
+  TOO_MUCH:      { signal: -1 },
+};
+
 @Injectable()
 export class BiofeedbackService {
   constructor(private prisma: PrismaService) {}
@@ -16,9 +43,16 @@ export class BiofeedbackService {
       muscleFeel: number;
       sleepLastNight: number;
       overallWellbeing: number;
+      muscleGroupFeedback?: {
+        muscleGroup: string;
+        jointPain: string;
+        soreness: string;
+        pump: string;
+        volume: string;
+      }[];
     },
   ) {
-    return this.prisma.bioFeedback.create({
+    const record = await this.prisma.bioFeedback.create({
       data: {
         userId,
         workoutId: data.workoutId ?? null,
@@ -31,12 +65,39 @@ export class BiofeedbackService {
         overallWellbeing: data.overallWellbeing,
       },
     });
+
+    if (data.muscleGroupFeedback?.length) {
+      for (const mgf of data.muscleGroupFeedback) {
+        await this.prisma.muscleGroupFeedback.create({
+          data: {
+            bioFeedbackId: record.id,
+            userId,
+            workoutId: data.workoutId ?? '',
+            muscleGroup: mgf.muscleGroup,
+            jointPain: mgf.jointPain,
+            jointPainScore: JOINT_PAIN_MAP[mgf.jointPain]?.score ?? 0,
+            soreness: mgf.soreness,
+            sorenessScore: SORENESS_MAP[mgf.soreness]?.score ?? 0,
+            pump: mgf.pump,
+            pumpScore: PUMP_MAP[mgf.pump]?.score ?? 5,
+            volume: mgf.volume,
+            volumeSignal: VOLUME_MAP[mgf.volume]?.signal ?? 0,
+          },
+        });
+      }
+    }
+
+    return this.prisma.bioFeedback.findUnique({
+      where: { id: record.id },
+      include: { muscleGroupFeedback: true },
+    });
   }
 
   async getLatest(userId: string) {
     return this.prisma.bioFeedback.findFirst({
       where: { userId },
       orderBy: { loggedAt: 'desc' },
+      include: { muscleGroupFeedback: true },
     });
   }
 
@@ -45,12 +106,13 @@ export class BiofeedbackService {
       where: { userId },
       orderBy: { loggedAt: 'desc' },
       take: 14,
-      select: { sorenessLog: true, loggedAt: true },
+      include: { muscleGroupFeedback: { where: { muscleGroup: muscle } } },
     });
 
     return records.map((r) => ({
       loggedAt: r.loggedAt,
       soreness: (r.sorenessLog as Record<string, number>)[muscle] ?? 0,
+      muscleGroupFeedback: r.muscleGroupFeedback[0] ?? null,
     }));
   }
 
@@ -61,12 +123,20 @@ export class BiofeedbackService {
     return this.prisma.bioFeedback.findFirst({
       where: {
         userId,
-        loggedAt: {
-          gte: seventyTwoHoursAgo,
-          lte: twentyFourHoursAgo,
-        },
+        loggedAt: { gte: seventyTwoHoursAgo, lte: twentyFourHoursAgo },
       },
       orderBy: { loggedAt: 'desc' },
+      include: { muscleGroupFeedback: true },
     });
+  }
+
+  async getMusclesTrained(workoutId: string) {
+    const sets = await this.prisma.set.findMany({
+      where: { workoutId },
+      include: { exercise: { select: { primaryMuscle: true } } },
+    });
+
+    const muscles = [...new Set(sets.map((s) => s.exercise.primaryMuscle))];
+    return { workoutId, musclesTrainedToday: muscles };
   }
 }
