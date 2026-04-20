@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { UsersService } from '../users/users.service';
+import { transformWorkoutTemplate } from '../common/transforms';
 
 @Injectable()
 export class MesocyclesService {
@@ -80,8 +81,8 @@ export class MesocyclesService {
     const alternatives = templates.filter((template) => template.id !== recommended.id);
 
     return {
-      recommended,
-      alternatives,
+      recommended: transformWorkoutTemplate(recommended),
+      alternatives: alternatives.map((t) => transformWorkoutTemplate(t)!),
       rationale: this.buildRecommendationRationale(
         user.goalMode,
         user.experienceLevel,
@@ -148,6 +149,13 @@ export class MesocyclesService {
     });
   }
 
+  async findAll(userId: string) {
+  return this.prisma.mesocycle.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
   async findOne(userId: string, id: string) {
     const mesocycle = await this.prisma.mesocycle.findFirst({
       where: { id, userId },
@@ -170,6 +178,68 @@ export class MesocyclesService {
       currentWeek: mesocycle.currentWeek,
       totalWeeks: mesocycle.totalWeeks,
       volumeTargets: mesocycle.volumeTargets,
+    };
+  }
+
+  async getTemplates() {
+    return this.prisma.workoutTemplate.findMany({
+      orderBy: [{ daysPerWeek: 'asc' }, { name: 'asc' }],
+      include: {
+        splits: {
+          include: {
+            days: {
+              orderBy: { dayNumber: 'asc' },
+              include: {
+                exercises: {
+                  orderBy: { orderIndex: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async getRecommendation(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const goal = user?.goalMode ?? 'MUSCLE_GAIN';
+    const experience = user?.experienceLevel ?? 'INTERMEDIATE';
+
+    const priority: Record<string, string> = {
+      'BEGINNER-MUSCLE_GAIN': 'Full Body',
+      'BEGINNER-STRENGTH': 'Full Body',
+      'BEGINNER-MAINTAIN': 'Full Body',
+      'INTERMEDIATE-MUSCLE_GAIN': 'Push Pull Legs',
+      'INTERMEDIATE-STRENGTH': 'Upper Lower',
+      'ADVANCED-MUSCLE_GAIN': 'Push Pull Legs',
+      'ADVANCED-STRENGTH': 'Powerlifting',
+      'ADVANCED-POWERBUILDING': 'Powerbuilding',
+    };
+
+    const key = `${experience}-${goal}`;
+    const recommendedName = priority[key] ?? 'Push Pull Legs';
+
+    const allTemplates = await this.prisma.workoutTemplate.findMany({
+      include: { splits: { include: { days: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    const recommended = allTemplates.find((t) => t.name === recommendedName)
+      ?? allTemplates[0];
+
+    const alternatives = allTemplates.filter((t) => t.id !== recommended?.id);
+
+    return {
+      recommendedName,
+      template: transformWorkoutTemplate(recommended),
+      recommended: transformWorkoutTemplate(recommended),
+      alternatives: alternatives.map((t) => transformWorkoutTemplate(t)!),
+      rationale: `Based on your goal (${goal}) and experience level (${experience})`,
+      profile: {
+        goalModeLabel: user?.goalMode ?? null,
+        experienceLevelLabel: user?.experienceLevel ?? null,
+      },
     };
   }
 }

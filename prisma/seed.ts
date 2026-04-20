@@ -201,6 +201,144 @@ async function main() {
     })
   }
 
+  // ── WORKOUT TEMPLATES ──────────────────────────────────────────
+const templateDefs = [
+  {
+    name: 'Push Pull Legs',
+    splitType: 'PPL',
+    daysPerWeek: 3,
+    description: 'Classic hypertrophy split. Push, pull, and leg days rotating across the week.',
+    goalTags: ['MUSCLE_GAIN'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Push', days: [{ dayNumber: 1, label: 'Push A' }, { dayNumber: 4, label: 'Push B' }] },
+      { label: 'Pull', days: [{ dayNumber: 2, label: 'Pull A' }, { dayNumber: 5, label: 'Pull B' }] },
+      { label: 'Legs', days: [{ dayNumber: 3, label: 'Legs A' }, { dayNumber: 6, label: 'Legs B' }] },
+    ],
+  },
+  {
+    name: 'Upper Lower',
+    splitType: 'UPPER_LOWER',
+    daysPerWeek: 4,
+    description: 'Balanced upper and lower body split. Good frequency for intermediate lifters.',
+    goalTags: ['MUSCLE_GAIN', 'STRENGTH'],
+    experienceTags: ['INTERMEDIATE'],
+    splits: [
+      { label: 'Upper', days: [{ dayNumber: 1, label: 'Upper A' }, { dayNumber: 3, label: 'Upper B' }] },
+      { label: 'Lower', days: [{ dayNumber: 2, label: 'Lower A' }, { dayNumber: 4, label: 'Lower B' }] },
+    ],
+  },
+  {
+    name: 'Full Body',
+    splitType: 'FULL_BODY',
+    daysPerWeek: 3,
+    description: 'Three full-body sessions per week. Ideal for beginners or when training time is limited.',
+    goalTags: ['MUSCLE_GAIN', 'MAINTAIN'],
+    experienceTags: ['BEGINNER'],
+    splits: [
+      { label: 'Full Body', days: [{ dayNumber: 1, label: 'Day 1' }, { dayNumber: 3, label: 'Day 2' }, { dayNumber: 5, label: 'Day 3' }] },
+    ],
+  },
+  {
+    name: 'Powerlifting',
+    splitType: 'POWERLIFTING',
+    daysPerWeek: 4,
+    description: 'Built around the squat, bench, and deadlift. Heavy compounds, low rep ranges, long rest periods.',
+    goalTags: ['STRENGTH'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Squat', days: [{ dayNumber: 1, label: 'Squat Day' }, { dayNumber: 4, label: 'Squat Volume' }] },
+      { label: 'Bench', days: [{ dayNumber: 2, label: 'Bench Day' }, { dayNumber: 5, label: 'Bench Volume' }] },
+      { label: 'Deadlift', days: [{ dayNumber: 3, label: 'Deadlift Day' }] },
+    ],
+  },
+  {
+    name: 'Powerbuilding',
+    splitType: 'POWERBUILDING',
+    daysPerWeek: 4,
+    description: 'Combines heavy compound strength work with hypertrophy accessory volume. Best of both worlds.',
+    goalTags: ['STRENGTH', 'MUSCLE_GAIN'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Upper Power', days: [{ dayNumber: 1, label: 'Upper Power' }] },
+      { label: 'Lower Power', days: [{ dayNumber: 2, label: 'Lower Power' }] },
+      { label: 'Upper Hypertrophy', days: [{ dayNumber: 4, label: 'Upper Volume' }] },
+      { label: 'Lower Hypertrophy', days: [{ dayNumber: 5, label: 'Lower Volume' }] },
+    ],
+  },
+  {
+    name: 'Glute Focus',
+    splitType: 'GLUTE_FOCUS',
+    daysPerWeek: 4,
+    description: 'Maximum glute stimulus across the week. Hip thrusts, cable work, and isolation paired with full lower body sessions.',
+    goalTags: ['MUSCLE_GAIN'],
+    experienceTags: ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Glute Primary', days: [{ dayNumber: 1, label: 'Glute A' }, { dayNumber: 4, label: 'Glute B' }] },
+      { label: 'Lower Body', days: [{ dayNumber: 2, label: 'Legs' }] },
+      { label: 'Upper Body', days: [{ dayNumber: 3, label: 'Upper' }] },
+    ],
+  },
+  {
+    name: 'Quadzilla',
+    splitType: 'QUAD_FOCUS',
+    daysPerWeek: 4,
+    description: 'Quad-dominant lower body programming. High frequency squatting, leg press, and extension work.',
+    goalTags: ['MUSCLE_GAIN'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Quad Primary', days: [{ dayNumber: 1, label: 'Quad A' }, { dayNumber: 3, label: 'Quad B' }] },
+      { label: 'Upper', days: [{ dayNumber: 2, label: 'Upper A' }, { dayNumber: 5, label: 'Upper B' }] },
+    ],
+  },
+  {
+    name: 'Chest Focus',
+    splitType: 'CHEST_FOCUS',
+    daysPerWeek: 4,
+    description: 'Twice-weekly chest sessions with full upper body coverage. Flat, incline, and cable work prioritised.',
+    goalTags: ['MUSCLE_GAIN'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Chest Primary', days: [{ dayNumber: 1, label: 'Chest A' }, { dayNumber: 4, label: 'Chest B' }] },
+      { label: 'Back', days: [{ dayNumber: 2, label: 'Back Day' }] },
+      { label: 'Legs', days: [{ dayNumber: 3, label: 'Legs Day' }] },
+    ],
+  },
+  {
+    name: 'Shoulder Focus',
+    splitType: 'SHOULDER_FOCUS',
+    daysPerWeek: 4,
+    description: 'Rear, side, and front delt work programmed for full shoulder development with pressing and isolation.',
+    goalTags: ['MUSCLE_GAIN'],
+    experienceTags: ['INTERMEDIATE', 'ADVANCED'],
+    splits: [
+      { label: 'Shoulder Primary', days: [{ dayNumber: 1, label: 'Shoulders A' }, { dayNumber: 4, label: 'Shoulders B' }] },
+      { label: 'Push', days: [{ dayNumber: 2, label: 'Push Day' }] },
+      { label: 'Pull + Legs', days: [{ dayNumber: 3, label: 'Pull + Legs' }] },
+    ],
+  },
+]
+
+for (const t of templateDefs) {
+  const existing = await prisma.workoutTemplate.findUnique({ where: { name: t.name } })
+  if (!existing) {
+    const template = await prisma.workoutTemplate.create({
+      data: { name: t.name, splitType: t.splitType, daysPerWeek: t.daysPerWeek },
+    })
+    for (const split of t.splits) {
+      const config = await prisma.splitConfig.create({
+        data: { templateId: template.id, splitLabel: split.label },
+      })
+      for (const day of split.days) {
+        await prisma.splitDay.create({
+          data: { splitConfigId: config.id, dayNumber: day.dayNumber, label: day.label },
+        })
+      }
+    }
+    console.log(`Seeded template: ${t.name}`)
+  }
+}
+
   const workoutTemplates: WorkoutTemplateSeed[] = [
     {
       name: 'Push Pull Legs',
@@ -437,6 +575,7 @@ async function main() {
         },
         select: { id: true },
       })
+      
 
       const existingSplitDayIds = existingSplitDays.map((splitDay) => splitDay.id)
 

@@ -520,3 +520,14 @@ model MuscleGroupFeedback {
 
   @@unique([bioFeedbackId, muscleGroup])
 }
+
+model WorkoutTemplate {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  splitType   String
+  daysPerWeek Int
+  description String?
+  goalTags    String[]
+  experienceTags String[]
+  splits      SplitConfig[]
+}
