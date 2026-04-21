@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { UsersService } from '../users/users.service';
 import { transformWorkoutTemplate } from '../common/transforms';
+import { EXPERIENCE_LEVEL_LABELS, GOAL_MODE_LABELS } from '../common/transforms';
 
 @Injectable()
 export class MesocyclesService {
@@ -15,8 +16,7 @@ export class MesocyclesService {
   async generate(userId: string, name: string, totalWeeks: number, templateId?: string) {
     const user = await this.users.findById(userId);
     if (!user) throw new NotFoundException('User not found');
-
-    const params = this.goalMode.getParameters(user.goalMode);
+    this.goalMode.getParameters(user.goalMode);
 
     const volumeTargets = {
       CHEST: { mev: 8, mrv: 16, current: 10 },
@@ -73,24 +73,33 @@ export class MesocyclesService {
       user.experienceLevel,
     );
 
-    const recommended = templates.find((template) => template.name === recommendedName);
-    if (!recommended) {
-      throw new NotFoundException('Recommended template not found');
-    }
+    const recommended = templates.find((template) => template.name === recommendedName)
+      ?? templates[0]
+      ?? null;
 
-    const alternatives = templates.filter((template) => template.id !== recommended.id);
+    const alternatives = recommended
+      ? templates.filter((template) => template.id !== recommended.id)
+      : [];
+
+    const rationale = recommended
+      ? this.buildRecommendationRationale(
+        user.goalMode,
+        user.experienceLevel,
+        recommended.name,
+      )
+      : 'No templates are currently available. You can still create a block and assign a template later.';
 
     return {
       recommended: transformWorkoutTemplate(recommended),
       alternatives: alternatives.map((t) => transformWorkoutTemplate(t)!),
-      rationale: this.buildRecommendationRationale(
-        user.goalMode,
-        user.experienceLevel,
-        recommended.name,
-      ),
+      rationale,
       profile: {
-        goalMode: user.goalMode,
-        experienceLevel: user.experienceLevel,
+        goalModeLabel: user.goalMode
+          ? GOAL_MODE_LABELS[user.goalMode] ?? user.goalMode
+          : null,
+        experienceLevelLabel: user.experienceLevel
+          ? EXPERIENCE_LEVEL_LABELS[user.experienceLevel] ?? user.experienceLevel
+          : null,
       },
     };
   }
@@ -201,45 +210,4 @@ export class MesocyclesService {
     });
   }
 
-  async getRecommendation(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const goal = user?.goalMode ?? 'MUSCLE_GAIN';
-    const experience = user?.experienceLevel ?? 'INTERMEDIATE';
-
-    const priority: Record<string, string> = {
-      'BEGINNER-MUSCLE_GAIN': 'Full Body',
-      'BEGINNER-STRENGTH': 'Full Body',
-      'BEGINNER-MAINTAIN': 'Full Body',
-      'INTERMEDIATE-MUSCLE_GAIN': 'Push Pull Legs',
-      'INTERMEDIATE-STRENGTH': 'Upper Lower',
-      'ADVANCED-MUSCLE_GAIN': 'Push Pull Legs',
-      'ADVANCED-STRENGTH': 'Powerlifting',
-      'ADVANCED-POWERBUILDING': 'Powerbuilding',
-    };
-
-    const key = `${experience}-${goal}`;
-    const recommendedName = priority[key] ?? 'Push Pull Legs';
-
-    const allTemplates = await this.prisma.workoutTemplate.findMany({
-      include: { splits: { include: { days: true } } },
-      orderBy: { name: 'asc' },
-    });
-
-    const recommended = allTemplates.find((t) => t.name === recommendedName)
-      ?? allTemplates[0];
-
-    const alternatives = allTemplates.filter((t) => t.id !== recommended?.id);
-
-    return {
-      recommendedName,
-      template: transformWorkoutTemplate(recommended),
-      recommended: transformWorkoutTemplate(recommended),
-      alternatives: alternatives.map((t) => transformWorkoutTemplate(t)!),
-      rationale: `Based on your goal (${goal}) and experience level (${experience})`,
-      profile: {
-        goalModeLabel: user?.goalMode ?? null,
-        experienceLevelLabel: user?.experienceLevel ?? null,
-      },
-    };
-  }
 }
