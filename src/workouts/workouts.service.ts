@@ -24,13 +24,52 @@ export class WorkoutsService {
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
+    if (mesocycleId) {
+      const scheduled = await this.prisma.workout.findFirst({
+        where: {
+          userId,
+          mesocycleId,
+          status: 'PLANNED',
+          ...(splitDayLabel ? { splitDayLabel } : {}),
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (scheduled) {
+        return this.prisma.workout.update({
+          where: { id: scheduled.id },
+          data: {
+            status: 'IN_PROGRESS',
+            startedAt: new Date(),
+            date: new Date(),
+          },
+        });
+      }
+    }
+
     return this.prisma.workout.create({
       data: {
         userId,
         mesocycleId: mesocycleId ?? null,
         splitDayLabel: splitDayLabel ?? null,
         status: 'IN_PROGRESS',
+        startedAt: new Date(),
+        date: new Date(),
       },
+    });
+  }
+
+  async findActive(userId: string) {
+    return this.prisma.workout.findMany({
+      where: {
+        userId,
+        status: 'IN_PROGRESS',
+        startedAt: {
+          gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        },
+      },
+      include: { sets: true },
+      orderBy: { startedAt: 'desc' },
     });
   }
 

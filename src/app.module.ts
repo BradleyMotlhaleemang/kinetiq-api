@@ -22,6 +22,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { CardioModule } from './cardio/cardio.module';
 import { NutritionModule } from './nutrition/nutrition.module';
 import { TimerModule } from './timer/timer.module';
+import { TemplatesModule } from './templates/templates.module';
 
 @Module({
   imports: [
@@ -29,8 +30,12 @@ import { TimerModule } from './timer/timer.module';
     ScheduleModule.forRoot(),
     BullModule.forRoot({
       redis: {
-        host: 'localhost',
-        port: 6379,
+        host: process.env.REDIS_HOST ?? 'localhost',
+        port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
+        // Prevent ioredis from throwing MaxRetriesPerRequestError when Redis isn't reachable.
+        // Jobs will still require Redis to function; this just avoids crashing requests.
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
       },
     }),
     PrismaModule,
@@ -53,6 +58,7 @@ import { TimerModule } from './timer/timer.module';
     CardioModule,
     NutritionModule,
     TimerModule,
+    TemplatesModule,
   ],
 })
 export class AppModule {}

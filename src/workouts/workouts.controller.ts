@@ -23,6 +23,12 @@ export class WorkoutsController {
     return workouts.map(transformWorkout);
   }
 
+  @Get('active')
+  async findActive(@Request() req: any) {
+    const workouts = await this.workouts.findActive(req.user.userId);
+    return workouts.map(transformWorkout);
+  }
+
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const workout = await this.workouts.findOne(req.user.userId, id);

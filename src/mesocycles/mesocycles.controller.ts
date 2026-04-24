@@ -39,9 +39,23 @@ export class MesocyclesController {
   @Post('generate')
   async generate(
     @Request() req: any,
-    @Body() body: { name: string; totalWeeks: number; templateId?: string },
+    @Body()
+    body: {
+      name?: string;
+      totalWeeks?: number;
+      templateId?: string;
+      overrideDurationWeeks?: number;
+      musclePriorities?: Record<string, 'EMPHASIZE' | 'GROW' | 'MAINTAIN'>;
+    },
   ) {
-    const result = await this.mesocycles.generate(req.user.userId, body.name, body.totalWeeks, body.templateId);
+    const result = body.templateId
+      ? await this.mesocycles.generate(req.user.userId, {
+          templateId: body.templateId,
+          name: body.name,
+          overrideDurationWeeks: body.overrideDurationWeeks ?? body.totalWeeks,
+          musclePriorities: body.musclePriorities,
+        })
+      : await this.mesocycles.generate(req.user.userId, body.name ?? 'New Mesocycle', body.totalWeeks ?? 8, body.templateId);
     return transformMesocycle(result);
   }
 
@@ -55,6 +69,11 @@ export class MesocyclesController {
   async close(@Request() req: any, @Param('id') id: string) {
     const result = await this.mesocycles.close(req.user.userId, id);
     return transformMesocycle(result);
+  }
+
+  @Get(':id/expand')
+  expand(@Request() req: any, @Param('id') id: string) {
+    return this.mesocycles.expandToProgram(id, req.user.userId);
   }
 
   @Get(':id/volume-status')

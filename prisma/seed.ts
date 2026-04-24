@@ -321,9 +321,28 @@ const templateDefs = [
 
 for (const t of templateDefs) {
   const existing = await prisma.workoutTemplate.findUnique({ where: { name: t.name } })
+  const defaultSlug = t.name.toUpperCase().replace(/[^A-Z0-9]+/g, '-')
+  const defaultPrimaryMuscle = t.splitType.includes('PPL')
+    ? 'Push'
+    : t.splitType.includes('UPPER')
+      ? 'Upper'
+      : t.splitType.includes('FULL')
+        ? 'Full Body'
+        : 'Balanced'
   if (!existing) {
     const template = await prisma.workoutTemplate.create({
-      data: { name: t.name, splitType: t.splitType, daysPerWeek: t.daysPerWeek },
+      data: {
+        slug: `LEGACY-${defaultSlug}`,
+        name: t.name,
+        level: 'INTERMEDIATE',
+        goal: 'HYPERTROPHY',
+        primaryMuscle: defaultPrimaryMuscle,
+        splitType: t.splitType,
+        daysPerWeek: t.daysPerWeek,
+        description: t.description ?? null,
+        goalTags: t.goalTags ?? ['MUSCLE_GAIN'],
+        experienceTags: t.experienceTags ?? ['INTERMEDIATE'],
+      },
     })
     for (const split of t.splits) {
       const config = await prisma.splitConfig.create({
@@ -546,16 +565,38 @@ for (const t of templateDefs) {
   }
 
   for (const templateSeed of workoutTemplates) {
+    const templateSlug = `LEGACY-${templateSeed.name.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}`
+    const templatePrimaryMuscle = templateSeed.splitType.includes('PPL')
+      ? 'Push'
+      : templateSeed.splitType.includes('UPPER')
+        ? 'Upper'
+        : templateSeed.splitType.includes('FULL')
+          ? 'Full Body'
+          : 'Balanced'
     const template = await prisma.workoutTemplate.upsert({
       where: { name: templateSeed.name },
       update: {
+        slug: templateSlug,
+        level: 'INTERMEDIATE',
+        goal: 'HYPERTROPHY',
+        primaryMuscle: templatePrimaryMuscle,
         splitType: templateSeed.splitType,
         daysPerWeek: templateSeed.daysPerWeek,
+        description: null,
+        goalTags: ['MUSCLE_GAIN'],
+        experienceTags: ['INTERMEDIATE'],
       },
       create: {
+        slug: templateSlug,
         name: templateSeed.name,
+        level: 'INTERMEDIATE',
+        goal: 'HYPERTROPHY',
+        primaryMuscle: templatePrimaryMuscle,
         splitType: templateSeed.splitType,
         daysPerWeek: templateSeed.daysPerWeek,
+        description: null,
+        goalTags: ['MUSCLE_GAIN'],
+        experienceTags: ['INTERMEDIATE'],
       },
     })
 
