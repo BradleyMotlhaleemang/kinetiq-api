@@ -83,7 +83,7 @@ type MesocycleTemplateWithDays = MesocycleTemplate & {
 };
 
 function splitStyleLabel(s: SplitStyle): string {
-  const map: Record<SplitStyle, string> = {
+  const map: Record<string, string> = {
     PPL:         'Push / Pull / Legs',
     UPPER_LOWER: 'Upper / Lower',
     FULL_BODY:   'Full Body',
