@@ -1,6 +1,7 @@
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
+import { SFL_DAILY_UPDATE_QUEUE } from '../workers/sfl-daily-update.worker';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressionEngineService } from '../progression-engine/progression-engine.service';
@@ -20,7 +21,8 @@ export class WorkoutsService {
     private weeklyFeedback: WeeklyFeedbackService,
     private biofeedback: BiofeedbackService,
     private notifications: NotificationsService,
-    @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue
+    @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue,
+    @InjectQueue(SFL_DAILY_UPDATE_QUEUE) private sflQueue: Queue,
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
@@ -213,6 +215,7 @@ const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
   });
 
   await this.e1rmQueue.add('rollup', { userId, workoutId });
+  await this.sflQueue.add('update', { userId, workoutId });
 
   await this.notifications.create(userId, 'BIOFEEDBACK_PROMPT', {
     workoutId,

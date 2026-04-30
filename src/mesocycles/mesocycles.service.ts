@@ -1,3 +1,5 @@
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +8,7 @@ import { UsersService } from '../users/users.service';
 import { transformWorkoutTemplate } from '../common/transforms';
 import { EXPERIENCE_LEVEL_LABELS, GOAL_MODE_LABELS } from '../common/transforms';
 import { TemplatesService } from '../templates/templates.service';
+import { SFR_QUEUE } from '../workers/sfr.worker';
 
 export class GenerateMesocycleDto {
   templateId!: string;
@@ -85,6 +88,7 @@ export class MesocyclesService {
     private goalMode: GoalModeService,
     private users: UsersService,
     private templates: TemplatesService,
+    @InjectQueue(SFR_QUEUE) private sfrQueue: Queue,
   ) {}
 
   async generate(userId: string, name: string, totalWeeks: number, templateId?: string): Promise<any>;
@@ -351,10 +355,12 @@ export class MesocyclesService {
 
   async close(userId: string, id: string) {
     await this.findOne(userId, id);
-    return this.prisma.mesocycle.update({
+    const mesocycle = await this.prisma.mesocycle.update({
       where: { id },
       data: { status: 'COMPLETED' },
     });
+    await this.sfrQueue.add('calculate', { userId, mesocycleId: id });
+    return mesocycle;
   }
 
   async getVolumeStatus(userId: string, id: string) {
