@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { BiofeedbackService } from './biofeedback.service';
+import { CreateBiofeedbackDto } from './dto/create-biofeedback.dto';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('biofeedback')
@@ -8,19 +9,7 @@ export class BiofeedbackController {
   constructor(private biofeedback: BiofeedbackService) {}
 
   @Post()
-  submit(
-    @Request() req: any,
-    @Body() body: {
-      workoutId?: string;
-      sorenessLog: Record<string, number>;
-      jointPainLog: Record<string, number>;
-      energyLevel: number;
-      strengthRating: number;
-      muscleFeel: number;
-      sleepLastNight: number;
-      overallWellbeing: number;
-    },
-  ) {
+  submit(@Request() req: any, @Body() body: CreateBiofeedbackDto) {
     return this.biofeedback.submit(req.user.userId, body);
   }
 

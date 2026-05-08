@@ -99,7 +99,7 @@ describe('TemplatesService', () => {
       expect(result[0].level).toBe('Intermediate');
       expect(result[0].splitStyleLabel).toBe('Push / Pull / Legs');
       expect(result[0].durationWeeks).toBe('8');
-      expect(result[0].badge).toBe('RECOMMENDED');
+      expect(result[0].badge).toBe('ADVANCED');
       expect(result[0].days).toEqual(['Push (A)']);  // only non-rest days
     });
 
@@ -193,8 +193,10 @@ describe('TemplatesService', () => {
       mockPrisma.mesocycleTemplate.findFirst
         .mockResolvedValueOnce(null)   // exact
         .mockResolvedValueOnce(null);  // fallback
+      const beginnerLevel =
+        (ExperienceLevel as any).BEGINNER ?? ExperienceLevel.NOVICE;
       await expect(
-        service.recommend(ExperienceLevel.NOVICE, TrainingGoal.POWERLIFTING, 2),
+        service.recommend(beginnerLevel, TrainingGoal.POWERLIFTING, 2),
       ).rejects.toThrow(NotFoundException);
     });
   });

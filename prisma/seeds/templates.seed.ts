@@ -23,7 +23,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-PUSH-B',
     name: 'Push Day Beginner',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.HYPERTROPHY,
     primaryMuscle: 'Push',
     splitType: SplitStyle.PPL,
@@ -52,7 +52,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-PULL-B',
     name: 'Pull Day Beginner',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.HYPERTROPHY,
     primaryMuscle: 'Back',
     splitType: SplitStyle.PPL,
@@ -80,7 +80,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-LEGS-B',
     name: 'Legs Beginner',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.HYPERTROPHY,
     primaryMuscle: 'Legs',
     splitType: SplitStyle.PPL,
@@ -123,7 +123,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-SBD-SQUAT',
     name: 'Squat Focus',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.STRENGTH,
     primaryMuscle: 'Legs',
     splitType: SplitStyle.SPECIALIZED,
@@ -137,7 +137,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-SBD-BENCH',
     name: 'Bench Focus',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.STRENGTH,
     primaryMuscle: 'Push',
     splitType: SplitStyle.SPECIALIZED,
@@ -151,7 +151,7 @@ const WORKOUT_TEMPLATES = [
   {
     slug: 'WT-SBD-DEADLIFT',
     name: 'Deadlift Focus',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.STRENGTH,
     primaryMuscle: 'Back',
     splitType: SplitStyle.SPECIALIZED,
@@ -257,7 +257,7 @@ type NewTemplateInput = {
 };
 
 function mapLevel(level: NewTemplateInput['level']): ExperienceLevel {
-  if (level === 'Beginner') return ExperienceLevel.NOVICE;
+  if (level === 'Beginner') return ExperienceLevel.BEGINNER;
   if (level === 'Intermediate') return ExperienceLevel.INTERMEDIATE;
   return ExperienceLevel.ADVANCED;
 }
@@ -280,7 +280,7 @@ function resolveWorkoutSlug(label: string, level: ExperienceLevel): string | nul
   const normalized = label.toLowerCase();
   if (normalized.includes('rest')) return null;
   if (normalized.includes('pull') || normalized.includes('back')) {
-    return level === ExperienceLevel.NOVICE ? 'WT-PULL-B' : 'WT-PULL-I';
+    return level === ExperienceLevel.BEGINNER ? 'WT-PULL-B' : 'WT-PULL-I';
   }
   if (
     normalized.includes('leg') ||
@@ -288,14 +288,14 @@ function resolveWorkoutSlug(label: string, level: ExperienceLevel): string | nul
     normalized.includes('quad') ||
     normalized.includes('glute')
   ) {
-    return level === ExperienceLevel.NOVICE ? 'WT-LEGS-B' : 'WT-LEGS-I';
+    return level === ExperienceLevel.BEGINNER ? 'WT-LEGS-B' : 'WT-LEGS-I';
   }
   if (
     normalized.includes('push') ||
     normalized.includes('chest') ||
     normalized.includes('shoulder')
   ) {
-    return level === ExperienceLevel.NOVICE ? 'WT-PUSH-B' : 'WT-PUSH-I';
+    return level === ExperienceLevel.BEGINNER ? 'WT-PUSH-B' : 'WT-PUSH-I';
   }
   if (normalized.includes('arm') || normalized.includes('upper') || normalized.includes('full')) {
     return 'WT-UPPER';
@@ -326,7 +326,7 @@ const MESOCYCLE_TEMPLATES: MesocycleTemplateSeed[] = [
   {
     slug: 'MC-016',
     name: 'PPL - 3 Day',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.HYPERTROPHY,
     splitStyle: SplitStyle.PPL,
     primaryFocus: 'Balanced',
@@ -487,7 +487,7 @@ const MESOCYCLE_TEMPLATES: MesocycleTemplateSeed[] = [
   {
     slug: 'MC-023',
     name: 'Powerlifting - 3 Day',
-    level: ExperienceLevel.NOVICE,
+    level: ExperienceLevel.BEGINNER,
     goal: TrainingGoal.STRENGTH,
     splitStyle: SplitStyle.FULL_BODY,
     primaryFocus: 'SBD',

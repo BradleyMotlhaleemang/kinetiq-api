@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateBiofeedbackDto } from './dto/create-biofeedback.dto';
 
 const JOINT_PAIN_MAP: Record<string, { score: number }> = {
   NONE:     { score: 0 },
@@ -32,26 +33,7 @@ const VOLUME_MAP: Record<string, { signal: number }> = {
 export class BiofeedbackService {
   constructor(private prisma: PrismaService) {}
 
-  async submit(
-    userId: string,
-    data: {
-      workoutId?: string;
-      sorenessLog: Record<string, number>;
-      jointPainLog: Record<string, number>;
-      energyLevel: number;
-      strengthRating: number;
-      muscleFeel: number;
-      sleepLastNight: number;
-      overallWellbeing: number;
-      muscleGroupFeedback?: {
-        muscleGroup: string;
-        jointPain: string;
-        soreness: string;
-        pump: string;
-        volume: string;
-      }[];
-    },
-  ) {
+  async submit(userId: string, data: CreateBiofeedbackDto) {
     const record = await this.prisma.bioFeedback.create({
       data: {
         userId,
@@ -63,6 +45,9 @@ export class BiofeedbackService {
         muscleFeel: data.muscleFeel,
         sleepLastNight: data.sleepLastNight,
         overallWellbeing: data.overallWellbeing,
+        ...(data.effortScore !== undefined && data.effortScore !== null
+          ? { effortScore: data.effortScore }
+          : {}),
       },
     });
 

@@ -107,12 +107,13 @@ function goalLabel(g: TrainingGoal): string {
 }
 
 function levelLabel(l: ExperienceLevel): string {
-  const map: Record<ExperienceLevel, string> = {
-    NOVICE:       'Beginner',
+  const map: Record<string, string> = {
+    BEGINNER: 'Beginner',
+    NOVICE: 'Beginner',
     INTERMEDIATE: 'Intermediate',
-    ADVANCED:     'Advanced',
+    ADVANCED: 'Advanced',
   };
-  return map[l] ?? l;
+  return map[String(l)] ?? String(l);
 }
 
 function durationString(min: number, max: number): string {

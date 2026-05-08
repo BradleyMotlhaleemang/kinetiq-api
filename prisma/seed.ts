@@ -30,6 +30,103 @@ type WorkoutTemplateSeed = {
   days: TemplateDaySeed[]
 }
 
+type ExerciseCategoryValue =
+  | 'PRIMARY_COMPOUND'
+  | 'COMPOUND_ACCESSORY'
+  | 'ISOLATION_PRIMARY'
+  | 'ISOLATION_AUXILIARY'
+
+const exerciseCategoryByName: Record<string, ExerciseCategoryValue> = {
+  // PRIMARY_COMPOUND
+  'Barbell Back Squat': 'PRIMARY_COMPOUND',
+  'Conventional Deadlift': 'PRIMARY_COMPOUND', // guide uses "Barbell Deadlift"
+  'Barbell Bench Press': 'PRIMARY_COMPOUND',
+  'Barbell Overhead Press': 'PRIMARY_COMPOUND',
+  'Barbell Row': 'PRIMARY_COMPOUND',
+  'Romanian Deadlift': 'PRIMARY_COMPOUND',
+  'Barbell Front Squat': 'PRIMARY_COMPOUND', // guide uses "Front Squat"
+  'Sumo Deadlift': 'PRIMARY_COMPOUND',
+  'Close Grip Bench Press': 'PRIMARY_COMPOUND', // guide uses "Close-Grip Bench Press"
+  'Barbell Incline Bench Press': 'PRIMARY_COMPOUND', // guide uses "Incline Barbell Bench Press"
+
+  // COMPOUND_ACCESSORY
+  'Leg Press': 'COMPOUND_ACCESSORY',
+  'Dumbbell Flat Press': 'COMPOUND_ACCESSORY', // closest to "Dumbbell Bench Press"
+  'Dumbbell Incline Press': 'COMPOUND_ACCESSORY',
+  'Cable Row': 'COMPOUND_ACCESSORY', // guide allows "Cable Row / Seated Cable Row"
+  'Bulgarian Split Squat': 'COMPOUND_ACCESSORY', // guide allows split squat variants
+  'Dumbbell Shoulder Press': 'COMPOUND_ACCESSORY',
+  'Pull-Up': 'COMPOUND_ACCESSORY', // guide allows weighted variant
+  'Dip': 'COMPOUND_ACCESSORY', // guide allows weighted variant
+  'Hack Squat': 'COMPOUND_ACCESSORY',
+  'Chest-Supported Row': 'COMPOUND_ACCESSORY',
+  'Barbell Decline Bench Press': 'COMPOUND_ACCESSORY', // closest compound pressing variant
+  'Dumbbell Decline Press': 'COMPOUND_ACCESSORY', // closest compound pressing variant
+  'Machine Chest Press': 'COMPOUND_ACCESSORY', // machine compound movement
+  'Machine Incline Press': 'COMPOUND_ACCESSORY', // machine compound movement
+  'Dumbbell Row': 'COMPOUND_ACCESSORY', // unilateral compound pull
+  'Machine Row': 'COMPOUND_ACCESSORY', // machine compound movement
+  'Wide Grip Lat Pulldown': 'COMPOUND_ACCESSORY', // pulldown variant
+  'Machine Shoulder Press': 'COMPOUND_ACCESSORY', // machine compound movement
+  'Arnold Press': 'COMPOUND_ACCESSORY', // dumbbell compound pressing variant
+  'Walking Lunge': 'COMPOUND_ACCESSORY', // split squat/lunge pattern
+  'Step-Up': 'COMPOUND_ACCESSORY', // unilateral compound lower-body movement
+  'Goblet Squat': 'COMPOUND_ACCESSORY', // loaded squat pattern, non-primary compound
+  'Dumbbell Romanian Deadlift': 'COMPOUND_ACCESSORY', // DB hinge variant
+  'Good Morning': 'COMPOUND_ACCESSORY', // barbell hinge accessory
+  'Dumbbell Hip Thrust': 'COMPOUND_ACCESSORY', // hip thrust variant
+  'Smith Machine Hip Thrust': 'COMPOUND_ACCESSORY', // machine hip thrust variant
+  'Diamond Push-Up': 'COMPOUND_ACCESSORY', // bodyweight compound pressing
+
+  // ISOLATION_PRIMARY
+  'Leg Curl': 'ISOLATION_PRIMARY',
+  'Seated Leg Curl': 'ISOLATION_PRIMARY',
+  'Leg Extension': 'ISOLATION_PRIMARY',
+  'Cable Fly': 'ISOLATION_PRIMARY',
+  'Cable Incline Fly': 'ISOLATION_PRIMARY',
+  'Cable Decline Fly': 'ISOLATION_PRIMARY',
+  'Pec Deck': 'ISOLATION_PRIMARY',
+  'Lat Pulldown': 'ISOLATION_PRIMARY',
+  'Barbell Curl': 'ISOLATION_PRIMARY',
+  'Dumbbell Curl': 'ISOLATION_PRIMARY',
+  'Cable Curl': 'ISOLATION_PRIMARY',
+  'Tricep Pushdown': 'ISOLATION_PRIMARY',
+  'Overhead Tricep Extension': 'ISOLATION_PRIMARY',
+  'Hip Thrust': 'ISOLATION_PRIMARY',
+  'Glute Bridge': 'ISOLATION_PRIMARY',
+  'Seated Calf Raise': 'ISOLATION_PRIMARY',
+  'Calf Raise': 'ISOLATION_PRIMARY', // closest to "Standing Calf Raise"
+  'Incline Dumbbell Curl': 'ISOLATION_PRIMARY',
+  'Hammer Curl': 'ISOLATION_PRIMARY',
+  'Preacher Curl': 'ISOLATION_PRIMARY',
+  'Machine Curl': 'ISOLATION_PRIMARY',
+  'Cable Hammer Curl': 'ISOLATION_PRIMARY',
+  'Concentration Curl': 'ISOLATION_PRIMARY',
+  'Spider Curl': 'ISOLATION_PRIMARY',
+  'Cable Rope Curl': 'ISOLATION_PRIMARY',
+  'Skull Crusher': 'ISOLATION_PRIMARY',
+  'Tricep Kickback': 'ISOLATION_PRIMARY',
+  'Dumbbell Overhead Tricep Extension': 'ISOLATION_PRIMARY',
+  'Cable Rope Pushdown': 'ISOLATION_PRIMARY',
+  'Machine Tricep Press': 'ISOLATION_PRIMARY',
+  'Straight Arm Pulldown': 'ISOLATION_PRIMARY', // lats-focused single-joint pattern
+  'Cable Kickback': 'ISOLATION_PRIMARY',
+  'Hip Abduction Machine': 'ISOLATION_PRIMARY',
+  'Cable Hip Abduction': 'ISOLATION_PRIMARY',
+  'Donkey Calf Raise': 'ISOLATION_PRIMARY',
+  'Single Leg Calf Raise': 'ISOLATION_PRIMARY',
+
+  // ISOLATION_AUXILIARY
+  'Dumbbell Lateral Raise': 'ISOLATION_AUXILIARY',
+  'Cable Lateral Raise': 'ISOLATION_AUXILIARY',
+  'Machine Lateral Raise': 'ISOLATION_AUXILIARY',
+  'Rear Delt Machine Fly': 'ISOLATION_AUXILIARY', // guide allows rear delt / reverse pec deck
+  'Reverse Fly': 'ISOLATION_AUXILIARY', // guide allows rear delt fly variants
+  'Face Pull': 'ISOLATION_AUXILIARY',
+  'Reverse Curl': 'ISOLATION_AUXILIARY', // forearm-dominant curl variant
+  'Nordic Hamstring Curl': 'ISOLATION_AUXILIARY', // guide mismatch: not listed; treated as high-leverage-demand isolation
+}
+
 async function main() {
   const barbell = await prisma.equipmentProfile.upsert({
     where: { name: 'BARBELL' },
@@ -175,11 +272,17 @@ async function main() {
   ]
 
   for (const ex of exercises) {
+    const category = exerciseCategoryByName[ex.name]
+    if (!category) {
+      throw new Error(`Exercise category missing for seed exercise: ${ex.name}`)
+    }
+
     const created = await prisma.exercise.upsert({
       where: { name: ex.name },
       update: {},
       create: {
         name: ex.name,
+        category,
         primaryMuscle: ex.primaryMuscle,
         secondaryMuscles: ex.secondaryMuscles,
         movementPattern: ex.movementPattern,

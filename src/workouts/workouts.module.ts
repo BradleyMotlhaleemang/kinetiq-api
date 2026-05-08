@@ -2,25 +2,23 @@ import { Module } from '@nestjs/common';
 import { WorkoutsService } from './workouts.service';
 import { WorkoutsController } from './workouts.controller';
 import { ProgressionEngineModule } from '../progression-engine/progression-engine.module';
-import { ReadinessModule } from '../readiness/readiness.module';
+import { ProgressionModule } from '../engine/progression/progression.module';
 import { GoalModeModule } from '../goal-mode/goal-mode.module';
-import { WeeklyFeedbackModule } from '../weekly-feedback/weekly-feedback.module';
 import { WorkersModule } from '../workers/workers.module';
 import { BiofeedbackModule } from '../biofeedback/biofeedback.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { BullModule } from '@nestjs/bull';
 import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
+import { BIOFEEDBACK_PROMPT_QUEUE } from '../workers/biofeedback-prompt.worker';
 
 @Module({
   imports: [
     ProgressionEngineModule,
-    ReadinessModule,
+    ProgressionModule,
     GoalModeModule,
-    WeeklyFeedbackModule,
     WorkersModule,
     BiofeedbackModule,
-    NotificationsModule,
     BullModule.registerQueue({ name: E1RM_ROLLUP_QUEUE }),
+    BullModule.registerQueue({ name: BIOFEEDBACK_PROMPT_QUEUE }),
   ],
   providers: [WorkoutsService],
   controllers: [WorkoutsController],

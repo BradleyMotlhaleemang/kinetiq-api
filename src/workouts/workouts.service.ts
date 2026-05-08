@@ -2,27 +2,30 @@ import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
 import { SFL_DAILY_UPDATE_QUEUE } from '../workers/sfl-daily-update.worker';
+import {
+  BIOFEEDBACK_PROMPT_QUEUE,
+  BIOFEEDBACK_PROMPT_DELAY_2H_MS,
+  getMsUntilNextDay11am,
+} from '../workers/biofeedback-prompt.worker';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressionEngineService } from '../progression-engine/progression-engine.service';
-import { ReadinessService } from '../readiness/readiness.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
-import { WeeklyFeedbackService } from '../weekly-feedback/weekly-feedback.service';
 import { BiofeedbackService } from '../biofeedback/biofeedback.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { VolumeProgressionService } from '../engine/progression/volume-progression.service';
 
 @Injectable()
 export class WorkoutsService {
   constructor(
     private prisma: PrismaService,
     private progressionEngine: ProgressionEngineService,
-    private readiness: ReadinessService,
     private goalMode: GoalModeService,
-    private weeklyFeedback: WeeklyFeedbackService,
     private biofeedback: BiofeedbackService,
-    private notifications: NotificationsService,
+    private volumeProgression: VolumeProgressionService,
     @InjectQueue(E1RM_ROLLUP_QUEUE) private e1rmQueue: Queue,
     @InjectQueue(SFL_DAILY_UPDATE_QUEUE) private sflQueue: Queue,
+    @InjectQueue(BIOFEEDBACK_PROMPT_QUEUE)
+    private biofeedbackPromptQueue: Queue,
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
@@ -97,45 +100,236 @@ export class WorkoutsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const todaysReadiness = await this.readiness.getTodaysReadiness(userId);
-    const sessionReadiness = todaysReadiness?.sessionReadiness ?? 0.7;
-    const sessionMode = todaysReadiness?.sessionMode ?? 'FULL';
-
     const goalModeParams = this.goalMode.getParameters(user.goalMode);
 
-    const weeklySignals = await this.weeklyFeedback.getSoftSignals(userId);
-
     const exercise = await this.prisma.exercise.findUnique({
-  where: { id: exerciseId },
-});
-
-const recentBiofeedback = await this.biofeedback.get48hrOffset(userId);
-const sorenessLog = recentBiofeedback?.sorenessLog as Record<string, number> | null;
-const primaryMuscle = exercise?.primaryMuscle ?? '';
-const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
-
-    const lastSet = await this.prisma.set.findFirst({
-      where: { workoutId, exerciseId },
-      orderBy: { createdAt: 'desc' },
+      where: { id: exerciseId },
+      select: {
+        id: true,
+        category: true,
+        primaryMuscle: true,
+        secondaryMuscles: true,
+      },
     });
-    const currentWeight = lastSet?.weight ?? 20;
+    if (!exercise) throw new NotFoundException('Exercise not found');
+
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+      select: { weekNumber: true, mesocycleId: true, dayNumber: true },
+    });
+
+    const lastPerf = await this.prisma.performanceHistory.findFirst({
+      where: { userId, exerciseId },
+      orderBy: { date: 'desc' },
+      select: {
+        bestWeight: true,
+        bestReps: true,
+        totalSets: true,
+      },
+    });
+
+    const exerciseSets = await this.prisma.set.findMany({
+      where: { workoutId, exerciseId },
+      orderBy: { setNumber: 'asc' },
+    });
+    const lastSet = exerciseSets[exerciseSets.length - 1] ?? null;
+
+    let currentWeight = lastPerf?.bestWeight ?? lastSet?.weight ?? 20;
+    let lastRepCount = lastPerf?.bestReps ?? lastSet?.reps ?? 0;
+    let lastSetCount = lastPerf?.totalSets ?? exerciseSets.length;
+
+    const recentProgLogs = await this.prisma.progressionLog.findMany({
+      where: { userId, exerciseId },
+      orderBy: { loggedAt: 'desc' },
+      take: 2,
+      select: { contextSnapshot: true },
+    });
+    const priorSnap = recentProgLogs[0]?.contextSnapshot as {
+      targetRepRangeLow?: number | null;
+      targetRepRangeHigh?: number | null;
+    } | null;
+    const effortScoreHistory = recentProgLogs.map(
+      (l) =>
+        (l.contextSnapshot as { effortScore?: number | null } | null)
+          ?.effortScore ?? null,
+    );
+    const targetRepRangeLow =
+      priorSnap?.targetRepRangeLow !== undefined &&
+      priorSnap?.targetRepRangeLow !== null
+        ? priorSnap.targetRepRangeLow
+        : null;
+    const targetRepRangeHigh =
+      priorSnap?.targetRepRangeHigh !== undefined &&
+      priorSnap?.targetRepRangeHigh !== null
+        ? priorSnap.targetRepRangeHigh
+        : null;
+
+    const recentBiofeedback = await this.biofeedback.get48hrOffset(userId);
+
+    const sorenessLog = recentBiofeedback?.sorenessLog as Record<
+      string,
+      number
+    > | null;
+    const jointPainLog = recentBiofeedback?.jointPainLog as Record<
+      string,
+      number
+    > | null;
+    const primaryMuscle = exercise.primaryMuscle;
+    const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
+
+    const normalizeVolumeSignal = (
+      raw: number | null | undefined,
+    ): number | null => {
+      if (raw === null || raw === undefined) return null;
+      if (raw === 1) return -1;
+      if (raw === -1) return 1;
+      return 0;
+    };
+
+    let pumpScore: number | null = null;
+    let volumeSignal: number | null = null;
+    let effortScore: number | null = null;
+    let jointPainScore = 0;
+
+    if (recentBiofeedback) {
+      effortScore =
+        recentBiofeedback.effortScore ?? recentBiofeedback.strengthRating ?? null;
+      const mgf = recentBiofeedback.muscleGroupFeedback?.find(
+        (m) => m.muscleGroup === primaryMuscle,
+      );
+      pumpScore = mgf?.pumpScore ?? null;
+      volumeSignal = mgf
+        ? normalizeVolumeSignal(mgf.volumeSignal)
+        : null;
+      const fromLog = this.maxJointPainForExercise(
+        jointPainLog,
+        exercise.primaryMuscle,
+        exercise.secondaryMuscles,
+      );
+      jointPainScore = Math.max(fromLog, mgf?.jointPainScore ?? 0);
+    }
+
+    const { weekNumber, templateSetCount } =
+      await this.resolveMesocycleProgressionContext(
+        userId,
+        workout?.mesocycleId ?? null,
+        workout?.weekNumber ?? null,
+        workout?.dayNumber ?? null,
+        exerciseId,
+      );
 
     const prescription = await this.progressionEngine.evaluate(
       userId,
       exerciseId,
+      exercise.category,
       currentWeight,
-      sessionReadiness,
-      sessionMode,
+      lastRepCount,
+      lastSetCount,
+      targetRepRangeLow,
+      targetRepRangeHigh,
       sorenessScore,
+      pumpScore,
+      volumeSignal,
+      jointPainScore,
+      effortScore,
+      effortScoreHistory,
       goalModeParams.incrementMultiplier,
-      weeklySignals,
+      user.goalMode ?? 'MAINTAIN',
+      user.experienceLevel ?? 'INTERMEDIATE',
+      weekNumber,
+      templateSetCount,
     );
+
+    let setTarget = prescription.setTarget;
+    let volumeProgressionReason: string | undefined;
+
+    if (exercise.category !== 'ISOLATION_AUXILIARY') {
+      const mesocycleRow = workout?.mesocycleId
+        ? await this.prisma.mesocycle.findFirst({
+            where: { id: workout.mesocycleId, userId },
+            select: { volumeTargets: true },
+          })
+        : null;
+
+      const mrvSetCount = this.resolveMrvSetCountFromMesocycle(
+        mesocycleRow?.volumeTargets,
+        primaryMuscle,
+        templateSetCount,
+      );
+
+      const lastThreeBio = await this.prisma.bioFeedback.findMany({
+        where: { userId },
+        orderBy: { loggedAt: 'desc' },
+        take: 3,
+        include: {
+          muscleGroupFeedback: {
+            where: { muscleGroup: primaryMuscle },
+          },
+        },
+      });
+
+      const pad3 = <T>(arr: T[], fill: T): T[] => {
+        const out = [...arr];
+        while (out.length < 3) out.push(fill);
+        return out.slice(0, 3);
+      };
+
+      const recentSorenessScores = pad3(
+        lastThreeBio.map(
+          (r) =>
+            (r.sorenessLog as Record<string, number>)?.[primaryMuscle] ?? 0,
+        ),
+        0,
+      );
+
+      const recentPumpScores = pad3(
+        lastThreeBio.map((r) => {
+          const mg = r.muscleGroupFeedback[0];
+          return mg?.pumpScore ?? null;
+        }),
+        null as number | null,
+      );
+
+      const recentVolumeSignals = pad3(
+        lastThreeBio.map((r) => {
+          const mg = r.muscleGroupFeedback[0];
+          return mg ? normalizeVolumeSignal(mg.volumeSignal) : null;
+        }),
+        null as number | null,
+      );
+
+      const sorenessThreshold = this.getSorenessThresholdForVolume(
+        user.goalMode ?? 'MAINTAIN',
+        user.experienceLevel ?? 'INTERMEDIATE',
+      );
+
+      const volResult = await this.volumeProgression.evaluateSetTarget({
+        userId,
+        exerciseId,
+        exerciseCategory: exercise.category,
+        currentSetCount: lastSetCount,
+        templateSetCount,
+        weekNumber,
+        mrvSetCount,
+        recentVolumeSignals,
+        recentPumpScores,
+        recentSorenessScores,
+        sorenessThreshold,
+      });
+
+      setTarget = volResult.setTarget;
+      volumeProgressionReason = volResult.reason;
+    }
 
     return {
       exerciseId,
-      sessionMode,
-      sessionReadiness,
+      sessionMode: 'FULL',
+      sessionReadiness: 1,
       ...prescription,
+      setTarget,
+      ...(volumeProgressionReason !== undefined
+        ? { volumeProgressionReason }
+        : {}),
     };
   }
 
@@ -217,12 +411,236 @@ const sorenessScore = sorenessLog?.[primaryMuscle] ?? 0;
   await this.e1rmQueue.add('rollup', { userId, workoutId });
   await this.sflQueue.add('update', { userId, workoutId });
 
-  await this.notifications.create(userId, 'BIOFEEDBACK_PROMPT', {
-    workoutId,
+  const promptPayload = { userId, workoutId };
+  await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+    delay: BIOFEEDBACK_PROMPT_DELAY_2H_MS,
+  });
+  await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+    delay: getMsUntilNextDay11am(),
   });
 
   return completed;
 }
+
+  private toVolumeKeyForMrv(value: string): string {
+    const normalized = value.toUpperCase();
+    if (normalized.includes('DELT') || normalized.includes('SHOULDER')) {
+      return 'SHOULDERS';
+    }
+    if (normalized.includes('HAMSTRING')) return 'HAMSTRINGS';
+    if (normalized.includes('GLUTE')) return 'GLUTES';
+    if (normalized.includes('QUAD')) return 'QUADS';
+    if (normalized.includes('TRICEP')) return 'TRICEPS';
+    if (normalized.includes('BICEP')) return 'BICEPS';
+    if (normalized.includes('CALF')) return 'CALVES';
+    if (normalized.includes('AB')) return 'ABS';
+    if (normalized.includes('CHEST')) return 'CHEST';
+    if (normalized.includes('BACK') || normalized.includes('LATS')) return 'BACK';
+    return normalized;
+  }
+
+  private resolveMrvSetCountFromMesocycle(
+    volumeTargets: unknown,
+    primaryMuscle: string,
+    templateSetCount: number,
+  ): number {
+    const fallback = templateSetCount + 4;
+    const vt = volumeTargets as Record<string, { mrv?: number }> | null;
+    if (!vt || typeof vt !== 'object') return fallback;
+    const key = this.toVolumeKeyForMrv(primaryMuscle);
+    const entry = vt[key];
+    const mrv = entry?.mrv;
+    if (typeof mrv === 'number' && mrv > 0) return mrv;
+    return fallback;
+  }
+
+  private getSorenessThresholdForVolume(
+    goalMode: string,
+    experienceLevel: string,
+  ): number {
+    const gm = this.normalizeGoalModeForVolume(goalMode);
+    const xp = this.normalizeExperienceForVolume(experienceLevel);
+
+    const matrix: Record<
+      string,
+      Record<'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED', number>
+    > = {
+      STRENGTH: { BEGINNER: 6, INTERMEDIATE: 5, ADVANCED: 4 },
+      MUSCLE_GAIN: { BEGINNER: 7, INTERMEDIATE: 6, ADVANCED: 5 },
+      MAINTAIN: { BEGINNER: 8, INTERMEDIATE: 7, ADVANCED: 6 },
+      WEIGHT_LOSS: { BEGINNER: 8, INTERMEDIATE: 7, ADVANCED: 6 },
+    };
+
+    const row = matrix[gm] ?? matrix['MAINTAIN']!;
+    return row[xp];
+  }
+
+  private normalizeGoalModeForVolume(goalMode: string): string {
+    const g = goalMode?.toUpperCase().replace(/[\s-]+/g, '_') || 'MAINTAIN';
+    if (g === 'MUSCLE' || g === 'HYPERTROPHY') return 'MUSCLE_GAIN';
+    if (
+      g === 'STRENGTH' ||
+      g === 'MUSCLE_GAIN' ||
+      g === 'MAINTAIN' ||
+      g === 'WEIGHT_LOSS'
+    ) {
+      return g;
+    }
+    return 'MAINTAIN';
+  }
+
+  private normalizeExperienceForVolume(
+    experienceLevel: string,
+  ): 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' {
+    const x =
+      experienceLevel?.toUpperCase().replace(/[\s-]+/g, '_') || 'INTERMEDIATE';
+    if (x === 'BEGINNER' || x === 'NOVICE') return 'BEGINNER';
+    if (x === 'ADVANCED') return 'ADVANCED';
+    return 'INTERMEDIATE';
+  }
+
+  private maxJointPainForExercise(
+    jointPainLog: Record<string, number> | null,
+    primaryMuscle: string,
+    secondaryMuscles: string[],
+  ): number {
+    if (!jointPainLog || Object.keys(jointPainLog).length === 0) return 0;
+
+    const keys = [primaryMuscle, ...secondaryMuscles];
+    let max = 0;
+    for (const k of keys) {
+      const v = jointPainLog[k];
+      if (typeof v === 'number' && !Number.isNaN(v) && v > max) max = v;
+    }
+
+    if (max === 0) {
+      const vals = Object.values(jointPainLog).filter(
+        (n): n is number => typeof n === 'number' && !Number.isNaN(n),
+      );
+      if (vals.length > 0) max = Math.max(...vals);
+    }
+
+    return max;
+  }
+
+  private pickSetsTargetFromMesocycleTemplate(
+    template: {
+      days: Array<{
+        dayNumber: number;
+        workoutTemplate: {
+          splits: Array<{
+            days: Array<{
+              exercises: Array<{ setsTarget: number }>;
+            }>;
+          }>;
+        } | null;
+      }>;
+    } | null,
+    workoutDayNumber: number | null,
+  ): number | null {
+    if (!template?.days?.length) return null;
+
+    const collect = (
+      days: Array<{
+        dayNumber: number;
+        workoutTemplate: {
+          splits: Array<{
+            days: Array<{
+              exercises: Array<{ setsTarget: number }>;
+            }>;
+          }>;
+        } | null;
+      }>,
+    ) => {
+      for (const d of days) {
+        const wt = d.workoutTemplate;
+        if (!wt) continue;
+        for (const split of wt.splits) {
+          for (const sd of split.days) {
+            const hit = sd.exercises[0];
+            if (hit) return hit.setsTarget;
+          }
+        }
+      }
+      return null;
+    };
+
+    if (workoutDayNumber != null) {
+      const filtered = template.days.filter(
+        (d) => d.dayNumber === workoutDayNumber,
+      );
+      const picked = collect(filtered);
+      if (picked != null) return picked;
+    }
+
+    return collect(template.days);
+  }
+
+  private async resolveMesocycleProgressionContext(
+    userId: string,
+    mesocycleId: string | null,
+    workoutWeekNumber: number | null,
+    workoutDayNumber: number | null,
+    exerciseId: string,
+  ): Promise<{ weekNumber: number; templateSetCount: number }> {
+    const DEFAULT_SETS = 3;
+    let weekNumber = workoutWeekNumber ?? 1;
+    let templateSetCount = DEFAULT_SETS;
+
+    if (!mesocycleId) {
+      return { weekNumber, templateSetCount };
+    }
+
+    const mesocycle = await this.prisma.mesocycle.findFirst({
+      where: { id: mesocycleId, userId },
+      select: {
+        currentWeek: true,
+        template: {
+          select: {
+            days: {
+              select: {
+                dayNumber: true,
+                workoutTemplate: {
+                  select: {
+                    splits: {
+                      select: {
+                        days: {
+                          select: {
+                            exercises: {
+                              where: { exerciseId },
+                              select: { setsTarget: true },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!mesocycle) {
+      return { weekNumber, templateSetCount };
+    }
+
+    if (mesocycle.currentWeek != null) {
+      weekNumber = mesocycle.currentWeek;
+    }
+
+    const picked = this.pickSetsTargetFromMesocycleTemplate(
+      mesocycle.template,
+      workoutDayNumber,
+    );
+    if (picked != null) {
+      templateSetCount = picked;
+    }
+
+    return { weekNumber, templateSetCount };
+  }
 
   private async updatePerformanceHistory(
     userId: string,

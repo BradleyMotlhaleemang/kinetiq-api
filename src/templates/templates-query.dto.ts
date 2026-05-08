@@ -9,7 +9,7 @@ export class TemplatesQueryDto {
 
   @IsOptional()
   @IsString()
-  level?: string;          // 'NOVICE' | 'INTERMEDIATE' | 'ADVANCED'
+  level?: string;          // 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
 
   @IsOptional()
   @IsString()

@@ -63,7 +63,7 @@ For local development, if needed:
 npx prisma migrate dev
 ```
 
-### 5) (Optional) Seed data
+### 5) Seed data (required for templates and starter content)
 
 ```bash
 npx prisma db seed
@@ -82,6 +82,59 @@ npm run start:dev
 ```
 
 Default API base URL: `http://localhost:3000/api/v1`
+
+## New Machine / After Pull Checklist
+
+Run this in order from `kinetiq-api`:
+
+```bash
+npm install
+npx prisma generate
+npx prisma migrate deploy
+npx prisma db seed
+npm run start:dev
+```
+
+If you are in active local development and have schema changes not yet reflected in your local DB:
+
+```bash
+npx prisma migrate dev
+```
+
+## Troubleshooting: Schema and Templates Not Visible
+
+- Confirm you are connected to the expected database in `.env` (`DATABASE_URL`).
+- Run `npx prisma migrate deploy` (or `npx prisma migrate dev` locally) to apply schema changes.
+- Run `npx prisma db seed` so template data is inserted/updated.
+- Verify connection and applied migrations:
+
+```bash
+npx prisma migrate status
+```
+
+- If local DB state is corrupted/drifted and this is a non-production environment, reset and reseed:
+
+```bash
+npx prisma migrate reset
+```
+
+This command is destructive and drops local data before reapplying migrations and seed.
+
+## DATABASE_URL password format
+
+In a URL like:
+
+```env
+DATABASE_URL="postgresql://postgres:Postsql@localhost:5432/kinetiq_db"
+```
+
+- username is `postgres`
+- password is `Postsql`
+- host is `localhost`
+- port is `5432`
+- database name is `kinetiq_db`
+
+If your password contains special characters (for example `@`, `:`, `/`, `#`), URL-encode it.
 
 ## Useful Commands
 

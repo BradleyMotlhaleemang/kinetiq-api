@@ -2,6 +2,7 @@ import { Controller, Get, Patch, Body, UseGuards, Request } from '@nestjs/common
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { transformUser } from '../common/transforms';
+import { SubmitClassificationDto } from './dto/submit-classification.dto';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('users')
@@ -30,5 +31,17 @@ export class UsersController {
   ) {
     const user = await this.users.updateOnboarding(req.user.userId, body);
     return transformUser(user);
+  }
+
+  @Patch('me/classification')
+  async submitClassification(
+    @Request() req: any,
+    @Body() body: SubmitClassificationDto,
+  ) {
+    const result = await this.users.submitClassification(req.user.userId, body);
+    return {
+      user: transformUser(result.user),
+      classification: result.classification,
+    };
   }
 }

@@ -7,7 +7,7 @@ datasource db {
 }
 
 enum ExperienceLevel {
-  NOVICE
+  BEGINNER
   INTERMEDIATE
   ADVANCED
 }
@@ -61,6 +61,11 @@ model User {
   onboardingCompletedAt DateTime?
   notificationsEnabled  Boolean   @default(true)
   preferredTrainingTime String?
+  classificationScore       Int?
+  recommendedLevel          String?
+  levelOverrideAcknowledged Boolean   @default(false)
+  classificationConfidence  Float?
+  classificationCompletedAt DateTime?
   mesocycles            Mesocycle[]
   workouts              Workout[]
   sessionReadiness   SessionReadiness[]
@@ -451,6 +456,7 @@ model BioFeedback {
   muscleFeel       Int
   sleepLastNight   Int
   overallWellbeing Int
+  effortScore      Int?
   loggedAt         DateTime @default(now())
   muscleGroupFeedback MuscleGroupFeedback[]
 }
