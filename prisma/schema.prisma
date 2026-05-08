@@ -37,6 +37,13 @@ enum WorkoutStatus {
   ABANDONED
 }
 
+enum ExerciseCategory {
+  PRIMARY_COMPOUND
+  COMPOUND_ACCESSORY
+  ISOLATION_PRIMARY
+  ISOLATION_AUXILIARY
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
@@ -86,6 +93,7 @@ model Exercise {
   secondaryMuscles String[]
   movementPattern  String
   exerciseType     String
+  category         ExerciseCategory           @default(PRIMARY_COMPOUND)
   isCompound       Boolean                    @default(true)
   metadata         ExerciseMetadata?
   substitutionPools SubstitutionPoolExercise[]
