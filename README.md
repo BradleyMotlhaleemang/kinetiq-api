@@ -19,12 +19,21 @@ Backend API for Kinetiq built with NestJS + Prisma.
 - PostgreSQL running
 - Redis running (required for queues)
 
-### 2) Install dependencies
+### 2) One-command setup (recommended)
 
 From the `kinetiq-api` folder:
 
 ```bash
+npm run setup
+```
+
+This runs:
+
+```bash
 npm install
+npx prisma generate
+npx prisma migrate deploy
+npx prisma db seed
 ```
 
 ### 3) Create environment file
@@ -50,7 +59,7 @@ SMTP_USER=...
 SMTP_PASS=...
 ```
 
-### 4) Generate Prisma client and run DB migrations
+### 4) Generate Prisma client and run DB migrations (manual)
 
 ```bash
 npx prisma generate
@@ -82,6 +91,21 @@ npm run start:dev
 ```
 
 Default API base URL: `http://localhost:3000/api/v1`
+
+## Seeded Development Accounts
+
+`prisma/seed.ts` creates stable development users so collaborators can log in immediately after setup:
+
+- `dev@kinetiq.local`
+- `coach@kinetiq.local`
+
+Default password:
+
+```text
+DevPass123!
+```
+
+Override with `DEV_SEED_PASSWORD` in `.env` for local customization.
 
 ## New Machine / After Pull Checklist
 

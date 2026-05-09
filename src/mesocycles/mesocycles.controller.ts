@@ -19,11 +19,6 @@ export class MesocyclesController {
     return this.mesocycles.getTemplates();
   }
 
-  @Get('recommend')
-  getRecommendation(@Request() req: any) {
-    return this.mesocycles.recommendTemplate(req.user.userId);
-  }
-
   @Get('active')
   async findActive(@Request() req: any) {
     const result = await this.mesocycles.findActive(req.user.userId);

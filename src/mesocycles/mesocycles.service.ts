@@ -5,8 +5,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { UsersService } from '../users/users.service';
-import { transformWorkoutTemplate } from '../common/transforms';
-import { EXPERIENCE_LEVEL_LABELS, GOAL_MODE_LABELS } from '../common/transforms';
 import { TemplatesService } from '../templates/templates.service';
 import { SFR_QUEUE } from '../workers/sfr.worker';
 
@@ -145,9 +143,7 @@ export class MesocyclesService {
       throw new BadRequestException('durationWeeks must be between 1 and 16');
     }
 
-    const primaryMuscles = tmpl.trainingDays
-      .filter((day) => !day.isRestDay && day.workoutTemplate)
-      .map((day) => day.workoutTemplate!.primaryMuscle);
+    const primaryMuscles = [tmpl.primaryFocus];
     const volumeTargets = buildVolumeTargets(primaryMuscles, dto.musclePriorities);
 
     const mesocycle = await this.prisma.mesocycle.create({
@@ -159,11 +155,13 @@ export class MesocyclesService {
         currentWeek: 1,
         status: 'ACTIVE',
         volumeTargets,
-        templateId: tmpl.id,
+        templateId: null,
       },
     });
 
-    const trainingDays = tmpl.trainingDays.filter((day) => !day.isRestDay);
+    const orderedDays = tmpl.splitConfigs
+      .flatMap((split) => split.days)
+      .sort((a, b) => a.dayNumber - b.dayNumber);
     const workoutInserts: {
       userId: string;
       mesocycleId: string;
@@ -178,19 +176,23 @@ export class MesocyclesService {
     }[] = [];
 
     for (let week = 1; week <= durationWeeks; week++) {
-      for (const day of trainingDays) {
-        const prescriptionSnapshot = day.workoutTemplate ? ({
-          templateSlug: day.workoutTemplate.slug,
-          templateName: day.workoutTemplate.name,
-          primaryMuscle: day.workoutTemplate.primaryMuscle,
-          slots: day.workoutTemplate.slots.map((s) => ({
-            order: s.order,
-            slotLabel: s.slotLabel,
-            sets: s.sets,
-            reps: s.reps,
-            rpe: s.rpe,
+      for (const day of orderedDays) {
+        const prescriptionSnapshot = {
+          templateId: tmpl.id,
+          templateSlug: tmpl.slug,
+          templateName: tmpl.name,
+          splitType: tmpl.splitStyle,
+          splitLabel: day.label,
+          exercises: day.exercises.map((entry) => ({
+            orderIndex: entry.orderIndex,
+            exerciseId: entry.exercise?.id ?? null,
+            exerciseName: entry.exercise?.name ?? null,
+            primaryMuscle: entry.exercise?.primaryMuscle ?? null,
+            setsTarget: entry.setsTarget,
+            repRangeMin: entry.repRangeMin,
+            repRangeMax: entry.repRangeMax,
           })),
-        } as Prisma.InputJsonValue) : null;
+        } as Prisma.InputJsonValue;
 
         const scheduledDate = new Date(
           mesocycle.startDate.getTime() +
@@ -207,7 +209,7 @@ export class MesocyclesService {
           scheduledDate,
           date: scheduledDate,
           status: 'PLANNED',
-          prescriptionSnapshot: prescriptionSnapshot ?? Prisma.JsonNull,
+          prescriptionSnapshot,
         });
       }
     }
@@ -226,131 +228,49 @@ export class MesocyclesService {
     });
   }
 
-  async recommendTemplate(userId: string) {
-    const user = await this.users.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-
-    const templates = await this.prisma.workoutTemplate.findMany({
-      orderBy: [{ daysPerWeek: 'asc' }, { name: 'asc' }],
+  async findActive(userId: string) {
+    const mesocycle = await this.prisma.mesocycle.findFirst({
+      where: { userId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
       include: {
-        splits: {
-          include: {
-            days: {
-              orderBy: { dayNumber: 'asc' },
-              include: {
-                exercises: {
-                  orderBy: { orderIndex: 'asc' },
-                },
-              },
-            },
-          },
+        workouts: {
+          take: 1,
+          orderBy: [{ weekNumber: 'asc' }, { dayNumber: 'asc' }],
+          select: { prescriptionSnapshot: true },
         },
       },
     });
-
-    const recommendedName = this.selectTemplateName(
-      user.goalMode,
-      user.experienceLevel,
-    );
-
-    const recommended = templates.find((template) => template.name === recommendedName)
-      ?? templates[0]
-      ?? null;
-
-    const alternatives = recommended
-      ? templates.filter((template) => template.id !== recommended.id)
-      : [];
-
-    const rationale = recommended
-      ? this.buildRecommendationRationale(
-        user.goalMode,
-        user.experienceLevel,
-        recommended.name,
-      )
-      : 'No templates are currently available. You can still create a block and assign a template later.';
-
-    return {
-      recommended: transformWorkoutTemplate(recommended),
-      alternatives: alternatives.map((t) => transformWorkoutTemplate(t)!),
-      rationale,
-      profile: {
-        goalModeLabel: user.goalMode
-          ? GOAL_MODE_LABELS[user.goalMode] ?? user.goalMode
-          : null,
-        experienceLevelLabel: user.experienceLevel
-          ? EXPERIENCE_LEVEL_LABELS[user.experienceLevel] ?? user.experienceLevel
-          : null,
-      },
-    };
-  }
-
-  private selectTemplateName(
-    goalMode: string | null | undefined,
-    experienceLevel: string | null | undefined,
-  ) {
-    if (experienceLevel === 'BEGINNER') {
-      return 'Full Body';
-    }
-
-    if (goalMode === 'STRENGTH') {
-      return 'Upper Lower';
-    }
-
-    if (goalMode === 'WEIGHT_LOSS' || goalMode === 'MAINTAIN') {
-      return experienceLevel === 'ADVANCED' ? 'Upper Lower' : 'Full Body';
-    }
-
-    if (goalMode === 'MUSCLE_GAIN') {
-      return experienceLevel === 'ADVANCED' ? 'Push Pull Legs' : 'Upper Lower';
-    }
-
-    return experienceLevel === 'ADVANCED' ? 'Upper Lower' : 'Full Body';
-  }
-
-  private buildRecommendationRationale(
-    goalMode: string | null | undefined,
-    experienceLevel: string | null | undefined,
-    templateName: string,
-  ) {
-    if (experienceLevel === 'BEGINNER') {
-      return `${templateName} is recommended because higher-frequency full-body sessions are easier to recover from and reinforce exercise skill for beginners.`;
-    }
-
-    if (goalMode === 'STRENGTH') {
-      return `${templateName} is recommended because it balances lift frequency, recovery, and weekly exposure well for strength-focused blocks.`;
-    }
-
-    if (goalMode === 'MUSCLE_GAIN' && experienceLevel === 'ADVANCED') {
-      return `${templateName} is recommended because advanced hypertrophy blocks usually benefit from higher weekly specialization and training frequency.`;
-    }
-
-    if (goalMode === 'WEIGHT_LOSS' || goalMode === 'MAINTAIN') {
-      return `${templateName} is recommended because it keeps weekly volume manageable while preserving recovery during lower-calorie or maintenance phases.`;
-    }
-
-    return `${templateName} is recommended because it provides a strong hypertrophy balance between training frequency, recovery, and session quality.`;
-  }
-
-  async findActive(userId: string) {
-    return this.prisma.mesocycle.findFirst({
-      where: { userId, status: 'ACTIVE' },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.attachTemplateMetadata(mesocycle);
   }
 
   async findAll(userId: string) {
-  return this.prisma.mesocycle.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-  });
-}
+    const mesocycles = await this.prisma.mesocycle.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        workouts: {
+          take: 1,
+          orderBy: [{ weekNumber: 'asc' }, { dayNumber: 'asc' }],
+          select: { prescriptionSnapshot: true },
+        },
+      },
+    });
+    return mesocycles.map((mesocycle) => this.attachTemplateMetadata(mesocycle));
+  }
 
   async findOne(userId: string, id: string) {
     const mesocycle = await this.prisma.mesocycle.findFirst({
       where: { id, userId },
+      include: {
+        workouts: {
+          take: 1,
+          orderBy: [{ weekNumber: 'asc' }, { dayNumber: 'asc' }],
+          select: { prescriptionSnapshot: true },
+        },
+      },
     });
     if (!mesocycle) throw new NotFoundException('Mesocycle not found');
-    return mesocycle;
+    return this.attachTemplateMetadata(mesocycle);
   }
 
   async close(userId: string, id: string) {
@@ -365,6 +285,7 @@ export class MesocyclesService {
 
   async getVolumeStatus(userId: string, id: string) {
     const mesocycle = await this.findOne(userId, id);
+    if (!mesocycle) throw new NotFoundException('Mesocycle not found');
     return {
       currentWeek: mesocycle.currentWeek,
       totalWeeks: mesocycle.totalWeeks,
@@ -441,6 +362,21 @@ export class MesocyclesService {
       startDate: meso.startDate,
       volumeTargets: meso.volumeTargets,
       weeks,
+    };
+  }
+
+  private attachTemplateMetadata<T extends { workouts?: Array<{ prescriptionSnapshot: Prisma.JsonValue | null }> }>(
+    mesocycle: T | null,
+  ): (T & { templateSplitType: string | null }) | null {
+    if (!mesocycle) return null;
+    const firstSnapshot = mesocycle.workouts?.[0]?.prescriptionSnapshot;
+    const splitType =
+      firstSnapshot && typeof firstSnapshot === 'object'
+        ? (((firstSnapshot as { splitType?: string }).splitType ?? null) as string | null)
+        : null;
+    return {
+      ...mesocycle,
+      templateSplitType: splitType,
     };
   }
 

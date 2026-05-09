@@ -3,6 +3,7 @@ dotenv.config()
 
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import * as bcrypt from 'bcrypt'
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -769,7 +770,53 @@ for (const t of templateDefs) {
     })
   }
 
+  const devPassword = process.env.DEV_SEED_PASSWORD ?? 'DevPass123!'
+  const passwordHash = await bcrypt.hash(devPassword, 10)
+  const devUsers = [
+    {
+      email: 'dev@kinetiq.local',
+      displayName: 'Dev Athlete',
+      goalMode: 'MUSCLE_GAIN',
+      experienceLevel: 'INTERMEDIATE',
+      trainingAgeMths: 24,
+      onboardingCompletedAt: new Date(),
+    },
+    {
+      email: 'coach@kinetiq.local',
+      displayName: 'Dev Coach',
+      goalMode: 'STRENGTH',
+      experienceLevel: 'ADVANCED',
+      trainingAgeMths: 72,
+      onboardingCompletedAt: new Date(),
+    },
+  ] as const
+
+  for (const user of devUsers) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {
+        displayName: user.displayName,
+        goalMode: user.goalMode,
+        experienceLevel: user.experienceLevel,
+        trainingAgeMths: user.trainingAgeMths,
+        onboardingCompletedAt: user.onboardingCompletedAt,
+      },
+      create: {
+        email: user.email,
+        passwordHash,
+        displayName: user.displayName,
+        goalMode: user.goalMode,
+        experienceLevel: user.experienceLevel,
+        trainingAgeMths: user.trainingAgeMths,
+        onboardingCompletedAt: user.onboardingCompletedAt,
+      },
+    })
+  }
+
   console.log(`Seed complete — ${exercises.length} exercises loaded`)
+  console.log(
+    `Seeded dev users: ${devUsers.map((user) => user.email).join(', ')} (password: ${devPassword})`,
+  )
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect())

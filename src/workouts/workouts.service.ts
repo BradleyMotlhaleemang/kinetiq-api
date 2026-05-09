@@ -8,6 +8,7 @@ import {
   getMsUntilNextDay11am,
 } from '../workers/biofeedback-prompt.worker';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressionEngineService } from '../progression-engine/progression-engine.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
@@ -591,6 +592,26 @@ export class WorkoutsService {
       return { weekNumber, templateSetCount };
     }
 
+    const templateWorkout = await this.prisma.workout.findFirst({
+      where: {
+        userId,
+        mesocycleId,
+        ...(workoutDayNumber != null ? { dayNumber: workoutDayNumber } : {}),
+      },
+      orderBy: [{ weekNumber: 'asc' }, { dayNumber: 'asc' }],
+      select: {
+        prescriptionSnapshot: true,
+      },
+    });
+
+    const snapshotSetTarget = this.pickSetsTargetFromSnapshot(
+      templateWorkout?.prescriptionSnapshot,
+      exerciseId,
+    );
+    if (snapshotSetTarget != null) {
+      templateSetCount = snapshotSetTarget;
+    }
+
     const mesocycle = await this.prisma.mesocycle.findFirst({
       where: { id: mesocycleId, userId },
       select: {
@@ -640,6 +661,24 @@ export class WorkoutsService {
     }
 
     return { weekNumber, templateSetCount };
+  }
+
+  private pickSetsTargetFromSnapshot(
+    snapshot: Prisma.JsonValue | null | undefined,
+    exerciseId: string,
+  ): number | null {
+    if (!snapshot || typeof snapshot !== 'object') return null;
+    const exercises = (snapshot as { exercises?: unknown }).exercises;
+    if (!Array.isArray(exercises)) return null;
+
+    for (const entry of exercises) {
+      if (!entry || typeof entry !== 'object') continue;
+      const candidate = entry as { exerciseId?: string; setsTarget?: number };
+      if (candidate.exerciseId === exerciseId && typeof candidate.setsTarget === 'number') {
+        return candidate.setsTarget;
+      }
+    }
+    return null;
   }
 
   private async updatePerformanceHistory(

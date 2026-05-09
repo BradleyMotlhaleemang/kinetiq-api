@@ -1,7 +1,6 @@
 // src/templates/templates.controller.ts
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ExperienceLevel, TrainingGoal } from '@prisma/client';
 import { TemplatesService } from './templates.service';
 import { TemplatesQueryDto } from './dto/templates-query.dto';
 
@@ -29,12 +28,24 @@ export class TemplatesController {
   @Get('recommendation')
   recommend(
     @Query('level') level: string,
-    @Query('goal')  goal:  string,
+    @Query('goal') goal: string,
     @Query('daysAvailable') daysAvailable: string,
   ) {
     return this.svc.recommend(
-      (ExperienceLevel[level?.toUpperCase() as keyof typeof ExperienceLevel] ?? ExperienceLevel.INTERMEDIATE),
-      (TrainingGoal[goal?.toUpperCase() as keyof typeof TrainingGoal] ?? TrainingGoal.HYPERTROPHY),
+      (goal ?? 'MUSCLE_GAIN').toUpperCase(),
+      (level ?? 'INTERMEDIATE').toUpperCase(),
+      parseInt(daysAvailable ?? '4', 10),
+    );
+  }
+
+  /**
+   * GET /templates/recommended
+   * Authenticated recommendation using current user profile.
+   */
+  @Get('recommended')
+  recommended(@Request() req: any, @Query('daysAvailable') daysAvailable: string) {
+    return this.svc.recommendForUser(
+      req.user.userId,
       parseInt(daysAvailable ?? '4', 10),
     );
   }
