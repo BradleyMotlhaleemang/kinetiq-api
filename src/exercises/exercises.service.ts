@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -6,11 +7,17 @@ export class ExercisesService {
   constructor(private prisma: PrismaService) {}
 
   findAll(filters?: { primaryMuscle?: string; movementPattern?: string }) {
+    const where: Prisma.ExerciseWhereInput = {
+      ...(filters?.primaryMuscle && {
+        primaryMuscle: filters.primaryMuscle as any,
+      }),
+      ...(filters?.movementPattern && {
+        movementPattern: filters.movementPattern as any,
+      }),
+    };
+
     return this.prisma.exercise.findMany({
-      where: {
-        ...(filters?.primaryMuscle && { primaryMuscle: filters.primaryMuscle }),
-        ...(filters?.movementPattern && { movementPattern: filters.movementPattern }),
-      },
+      where,
       include: { metadata: true },
     });
   }

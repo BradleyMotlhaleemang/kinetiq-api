@@ -1,3 +1,5 @@
+import { PROGRESSION_ACTION_LABELS_BY_KEY } from '../progression-engine/constants/action-labels.constants';
+
 export const GOAL_MODE_LABELS: Record<string, string> = {
   MUSCLE_GAIN: 'Build Muscle',
   STRENGTH: 'Build Strength',
@@ -16,13 +18,6 @@ export const SESSION_MODE_COLORS: Record<string, string> = {
   FULL: 'green',
   MODIFIED: 'amber',
   DELOAD: 'red',
-};
-
-export const PROGRESSION_ACTION_LABELS: Record<string, string> = {
-  PROGRESS: 'Ready to Progress',
-  HOLD: 'Hold Current Load',
-  REDUCE: 'Reduce Load',
-  DELOAD: 'Deload Recommended',
 };
 
 export const WORKOUT_STATUS_LABELS: Record<string, string> = {
@@ -95,7 +90,7 @@ export function transformPrescription(prescription: any) {
   return {
     ...prescription,
     actionLabel:
-      PROGRESSION_ACTION_LABELS[prescription.action] ?? prescription.action,
+      PROGRESSION_ACTION_LABELS_BY_KEY[prescription.action] ?? prescription.action,
     sessionModeLabel:
       SESSION_MODE_LABELS[prescription.sessionMode] ?? prescription.sessionMode,
     sessionModeColor:

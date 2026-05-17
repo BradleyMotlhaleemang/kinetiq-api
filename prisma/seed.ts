@@ -128,6 +128,100 @@ const exerciseCategoryByName: Record<string, ExerciseCategoryValue> = {
   'Nordic Hamstring Curl': 'ISOLATION_AUXILIARY', // guide mismatch: not listed; treated as high-leverage-demand isolation
 }
 
+const movementClassByName: Record<string, string | null> = {
+  'Barbell Bench Press': 'CHEST_HORIZONTAL_PRESS',
+  'Barbell Incline Bench Press': 'CHEST_INCLINE_PRESS',
+  'Barbell Decline Bench Press': 'CHEST_HORIZONTAL_PRESS',
+  'Dumbbell Flat Press': 'CHEST_HORIZONTAL_PRESS',
+  'Dumbbell Incline Press': 'CHEST_INCLINE_PRESS',
+  'Dumbbell Decline Press': 'CHEST_HORIZONTAL_PRESS',
+  'Machine Chest Press': 'CHEST_HORIZONTAL_PRESS',
+  'Machine Incline Press': 'CHEST_INCLINE_PRESS',
+  'Cable Fly': 'CHEST_ADDUCTION_FLY',
+  'Cable Incline Fly': 'CHEST_ADDUCTION_FLY',
+  'Cable Decline Fly': 'CHEST_ADDUCTION_FLY',
+  'Dip': 'CHEST_HORIZONTAL_PRESS',
+  'Pec Deck': 'CHEST_ADDUCTION_FLY',
+  'Dumbbell Fly': 'CHEST_ADDUCTION_FLY',
+  'Dumbbell Incline Fly': 'CHEST_ADDUCTION_FLY',
+  'Dumbbell Decline Fly': 'CHEST_ADDUCTION_FLY',
+
+  'Conventional Deadlift': 'BACK_AXIAL_HINGE',
+  'Sumo Deadlift': 'BACK_AXIAL_HINGE',
+  'Barbell Row': 'BACK_HORIZONTAL_PULL',
+  'Cable Row': 'BACK_HORIZONTAL_PULL',
+  'Dumbbell Row': 'BACK_HORIZONTAL_PULL',
+  'Chest-Supported Row': 'BACK_HORIZONTAL_PULL',
+  'Machine Row': 'BACK_HORIZONTAL_PULL',
+  'Pull-Up': 'BACK_VERTICAL_PULL',
+  'Lat Pulldown': 'BACK_VERTICAL_PULL',
+  'Wide Grip Lat Pulldown': 'BACK_VERTICAL_PULL',
+  'Straight Arm Pulldown': 'BACK_STRAIGHT_ARM_PULL',
+
+  'Barbell Overhead Press': 'SHOULDER_VERTICAL_PRESS',
+  'Dumbbell Shoulder Press': 'SHOULDER_VERTICAL_PRESS',
+  'Machine Shoulder Press': 'SHOULDER_VERTICAL_PRESS',
+  'Arnold Press': 'SHOULDER_VERTICAL_PRESS',
+  'Dumbbell Lateral Raise': 'SHOULDER_LATERAL_ABDUCTION',
+  'Cable Lateral Raise': 'SHOULDER_LATERAL_ABDUCTION',
+  'Machine Lateral Raise': 'SHOULDER_LATERAL_ABDUCTION',
+  'Face Pull': 'SHOULDER_REAR_DELT',
+  'Reverse Fly': 'SHOULDER_REAR_DELT',
+  'Rear Delt Machine Fly': 'SHOULDER_REAR_DELT',
+
+  'Barbell Back Squat': 'QUAD_BILATERAL_SQUAT',
+  'Barbell Front Squat': 'QUAD_BILATERAL_SQUAT',
+  'Leg Press': 'QUAD_MACHINE_PRESS',
+  'Leg Extension': 'QUAD_KNEE_EXTENSION',
+  'Bulgarian Split Squat': 'QUAD_UNILATERAL',
+  'Walking Lunge': 'QUAD_UNILATERAL',
+  'Step-Up': 'QUAD_UNILATERAL',
+  'Hack Squat': 'QUAD_BILATERAL_SQUAT',
+  'Goblet Squat': 'QUAD_BILATERAL_SQUAT',
+
+  'Romanian Deadlift': 'HAMSTRING_HIP_HINGE',
+  'Dumbbell Romanian Deadlift': 'HAMSTRING_HIP_HINGE',
+  'Leg Curl': 'HAMSTRING_KNEE_FLEXION',
+  'Seated Leg Curl': 'HAMSTRING_KNEE_FLEXION',
+  'Nordic Hamstring Curl': 'HAMSTRING_KNEE_FLEXION',
+  'Good Morning': 'HAMSTRING_HIP_HINGE',
+
+  'Barbell Curl': 'BICEP_SUPINATED_CURL',
+  'Dumbbell Curl': 'BICEP_SUPINATED_CURL',
+  'Cable Curl': 'BICEP_SUPINATED_CURL',
+  'Incline Dumbbell Curl': 'BICEP_LENGTHENED',
+  'Hammer Curl': 'BICEP_NEUTRAL_BRACHIALIS',
+  'Preacher Curl': 'BICEP_SHORTENED',
+  'Machine Curl': 'BICEP_SHORTENED',
+  'Cable Hammer Curl': 'BICEP_NEUTRAL_BRACHIALIS',
+  'Concentration Curl': 'BICEP_SHORTENED',
+  'Spider Curl': 'BICEP_SHORTENED',
+  'Reverse Curl': 'BICEP_NEUTRAL_BRACHIALIS',
+  'Cable Rope Curl': 'BICEP_SUPINATED_CURL',
+
+  'Tricep Pushdown': 'TRICEP_PUSHDOWN',
+  'Overhead Tricep Extension': 'TRICEP_OVERHEAD_EXTENSION',
+  'Skull Crusher': 'TRICEP_OVERHEAD_EXTENSION',
+  'Tricep Kickback': 'TRICEP_PUSHDOWN',
+  'Close Grip Bench Press': 'TRICEP_PRESS_COMPOUND',
+  'Dumbbell Overhead Tricep Extension': 'TRICEP_OVERHEAD_EXTENSION',
+  'Cable Rope Pushdown': 'TRICEP_PUSHDOWN',
+  'Machine Tricep Press': 'TRICEP_PUSHDOWN',
+  'Diamond Push-Up': 'TRICEP_PRESS_COMPOUND',
+
+  'Hip Thrust': 'GLUTE_HIP_THRUST',
+  'Dumbbell Hip Thrust': 'GLUTE_HIP_THRUST',
+  'Glute Bridge': 'GLUTE_HIP_THRUST',
+  'Cable Kickback': 'GLUTE_KICKBACK',
+  'Hip Abduction Machine': 'GLUTE_HIP_ABDUCTION',
+  'Cable Hip Abduction': 'GLUTE_HIP_ABDUCTION',
+  'Smith Machine Hip Thrust': 'GLUTE_HIP_THRUST',
+  'Calf Raise': 'CALF_STANDING',
+  'Seated Calf Raise': 'CALF_SEATED',
+  'Donkey Calf Raise': 'CALF_STANDING',
+  'Single Leg Calf Raise': 'CALF_UNILATERAL',
+}
+
 async function main() {
   const barbell = await prisma.equipmentProfile.upsert({
     where: { name: 'BARBELL' },
@@ -284,10 +378,11 @@ async function main() {
       create: {
         name: ex.name,
         category,
-        primaryMuscle: ex.primaryMuscle,
-        secondaryMuscles: ex.secondaryMuscles,
-        movementPattern: ex.movementPattern,
-        exerciseType: ex.exerciseType,
+        primaryMuscle: ex.primaryMuscle as any,
+        secondaryMuscles: ex.secondaryMuscles as any,
+        movementPattern: ex.movementPattern as any,
+        exerciseType: ex.exerciseType as any,
+        movementClass: (movementClassByName[ex.name] ?? null) as any,
         isCompound: ex.isCompound,
       },
     })
@@ -304,6 +399,348 @@ async function main() {
       },
     })
   }
+
+  // ─── Substitution Pools ──────────────────────────────────────────────────
+  console.log('Seeding substitution pools...')
+
+  const poolDefinitions = [
+    // BACK
+    {
+      name: 'Back — Horizontal Pull',
+      primaryMuscle: 'BACK',
+      movementPattern: 'HORIZONTAL_PULL',
+      exercises: [
+        { name: 'Barbell Row',          priority: 1, suitableWhenPain: [] },
+        { name: 'Cable Row',            priority: 2, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Dumbbell Row',         priority: 3, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Chest-Supported Row',  priority: 4, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Machine Row',          priority: 5, suitableWhenPain: ['LOWER_BACK', 'WRIST'] },
+      ],
+    },
+    {
+      name: 'Back — Vertical Pull',
+      primaryMuscle: 'BACK',
+      movementPattern: 'VERTICAL_PULL',
+      exercises: [
+        { name: 'Pull-Up',                priority: 1, suitableWhenPain: [] },
+        { name: 'Lat Pulldown',           priority: 2, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Wide Grip Lat Pulldown', priority: 3, suitableWhenPain: [] },
+      ],
+    },
+    {
+      name: 'Back — Straight Arm Pull',
+      primaryMuscle: 'BACK',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Straight Arm Pulldown', priority: 1, suitableWhenPain: ['ELBOW', 'WRIST'] },
+      ],
+    },
+    {
+      name: 'Back — Axial Hinge',
+      primaryMuscle: 'BACK',
+      movementPattern: 'HINGE',
+      exercises: [
+        { name: 'Conventional Deadlift', priority: 1, suitableWhenPain: [] },
+        { name: 'Sumo Deadlift',         priority: 2, suitableWhenPain: ['LOWER_BACK'] },
+      ],
+    },
+    // CHEST
+    {
+      name: 'Chest — Horizontal Press',
+      primaryMuscle: 'CHEST',
+      movementPattern: 'HORIZONTAL_PUSH',
+      exercises: [
+        { name: 'Barbell Bench Press',    priority: 1, suitableWhenPain: [] },
+        { name: 'Dumbbell Flat Press',    priority: 2, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Barbell Decline Bench Press', priority: 3, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Dumbbell Decline Press', priority: 4, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Machine Chest Press',    priority: 5, suitableWhenPain: ['SHOULDER', 'WRIST', 'ELBOW'] },
+        { name: 'Dip',                    priority: 6, suitableWhenPain: [] },
+      ],
+    },
+    {
+      name: 'Chest — Incline Press',
+      primaryMuscle: 'CHEST',
+      movementPattern: 'HORIZONTAL_PUSH',
+      exercises: [
+        { name: 'Barbell Incline Bench Press', priority: 1, suitableWhenPain: [] },
+        { name: 'Dumbbell Incline Press',      priority: 2, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Machine Incline Press',       priority: 3, suitableWhenPain: ['SHOULDER', 'WRIST', 'ELBOW'] },
+      ],
+    },
+    {
+      name: 'Chest — Adduction Fly',
+      primaryMuscle: 'CHEST',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Cable Fly',         priority: 1, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Cable Incline Fly', priority: 2, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Cable Decline Fly', priority: 3, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Pec Deck',          priority: 4, suitableWhenPain: ['SHOULDER', 'WRIST', 'ELBOW'] },
+      ],
+    },
+    // SHOULDERS
+    {
+      name: 'Shoulder — Vertical Press',
+      primaryMuscle: 'FRONT_DELT',
+      movementPattern: 'VERTICAL_PUSH',
+      exercises: [
+        { name: 'Barbell Overhead Press',  priority: 1, suitableWhenPain: [] },
+        { name: 'Dumbbell Shoulder Press', priority: 2, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Arnold Press',            priority: 3, suitableWhenPain: [] },
+        { name: 'Machine Shoulder Press',  priority: 4, suitableWhenPain: ['SHOULDER', 'WRIST', 'ELBOW'] },
+      ],
+    },
+    {
+      name: 'Shoulder — Lateral Abduction',
+      primaryMuscle: 'SIDE_DELT',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Dumbbell Lateral Raise', priority: 1, suitableWhenPain: [] },
+        { name: 'Cable Lateral Raise',    priority: 2, suitableWhenPain: ['ELBOW', 'WRIST'] },
+        { name: 'Machine Lateral Raise',  priority: 3, suitableWhenPain: ['ELBOW', 'WRIST', 'SHOULDER'] },
+      ],
+    },
+    {
+      name: 'Shoulder — Rear Delt',
+      primaryMuscle: 'REAR_DELT',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Face Pull',            priority: 1, suitableWhenPain: ['SHOULDER', 'ELBOW'] },
+        { name: 'Reverse Fly',          priority: 2, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Rear Delt Machine Fly',priority: 3, suitableWhenPain: ['SHOULDER', 'ELBOW', 'WRIST'] },
+      ],
+    },
+    // QUADS
+    {
+      name: 'Quad — Bilateral Squat',
+      primaryMuscle: 'QUADS',
+      movementPattern: 'SQUAT',
+      exercises: [
+        { name: 'Barbell Back Squat',  priority: 1, suitableWhenPain: [] },
+        { name: 'Barbell Front Squat', priority: 2, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Hack Squat',          priority: 3, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+        { name: 'Goblet Squat',        priority: 4, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Leg Press',           priority: 5, suitableWhenPain: ['LOWER_BACK', 'HIP', 'KNEE'] },
+      ],
+    },
+    {
+      name: 'Quad — Machine Press',
+      primaryMuscle: 'QUADS',
+      movementPattern: 'SQUAT',
+      exercises: [
+        { name: 'Leg Press', priority: 1, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+      ],
+    },
+    {
+      name: 'Quad — Unilateral',
+      primaryMuscle: 'QUADS',
+      movementPattern: 'SQUAT',
+      exercises: [
+        { name: 'Bulgarian Split Squat', priority: 1, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Walking Lunge',         priority: 2, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Step-Up',               priority: 3, suitableWhenPain: ['LOWER_BACK', 'HIP', 'KNEE'] },
+      ],
+    },
+    {
+      name: 'Quad — Knee Extension',
+      primaryMuscle: 'QUADS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Leg Extension', priority: 1, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+      ],
+    },
+    // HAMSTRINGS
+    {
+      name: 'Hamstring — Hip Hinge',
+      primaryMuscle: 'HAMSTRINGS',
+      movementPattern: 'HINGE',
+      exercises: [
+        { name: 'Romanian Deadlift',         priority: 1, suitableWhenPain: [] },
+        { name: 'Dumbbell Romanian Deadlift',priority: 2, suitableWhenPain: ['LOWER_BACK'] },
+        { name: 'Good Morning',              priority: 3, suitableWhenPain: [] },
+      ],
+    },
+    {
+      name: 'Hamstring — Knee Flexion',
+      primaryMuscle: 'HAMSTRINGS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Leg Curl',           priority: 1, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+        { name: 'Seated Leg Curl',    priority: 2, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+        { name: 'Nordic Hamstring Curl', priority: 3, suitableWhenPain: ['LOWER_BACK', 'HIP'] },
+      ],
+    },
+    // GLUTES
+    {
+      name: 'Glute — Hip Thrust',
+      primaryMuscle: 'GLUTES',
+      movementPattern: 'HINGE',
+      exercises: [
+        { name: 'Hip Thrust',             priority: 1, suitableWhenPain: ['LOWER_BACK', 'KNEE'] },
+        { name: 'Smith Machine Hip Thrust',priority: 2, suitableWhenPain: ['LOWER_BACK', 'KNEE'] },
+        { name: 'Dumbbell Hip Thrust',    priority: 3, suitableWhenPain: ['LOWER_BACK', 'KNEE'] },
+        { name: 'Glute Bridge',           priority: 4, suitableWhenPain: ['LOWER_BACK', 'KNEE', 'HIP'] },
+      ],
+    },
+    {
+      name: 'Glute — Hip Abduction',
+      primaryMuscle: 'GLUTES',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Hip Abduction Machine', priority: 1, suitableWhenPain: ['LOWER_BACK', 'KNEE', 'ANKLE'] },
+        { name: 'Cable Hip Abduction',   priority: 2, suitableWhenPain: ['LOWER_BACK', 'KNEE'] },
+      ],
+    },
+    {
+      name: 'Glute — Kickback',
+      primaryMuscle: 'GLUTES',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Cable Kickback', priority: 1, suitableWhenPain: ['LOWER_BACK', 'KNEE', 'HIP'] },
+      ],
+    },
+    // BICEPS
+    {
+      name: 'Bicep — Supinated Curl',
+      primaryMuscle: 'BICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Barbell Curl',    priority: 1, suitableWhenPain: [] },
+        { name: 'Dumbbell Curl',   priority: 2, suitableWhenPain: ['WRIST', 'ELBOW'] },
+        { name: 'Cable Curl',      priority: 3, suitableWhenPain: ['WRIST', 'ELBOW'] },
+        { name: 'Cable Rope Curl', priority: 4, suitableWhenPain: ['WRIST', 'ELBOW', 'SHOULDER'] },
+      ],
+    },
+    {
+      name: 'Bicep — Lengthened',
+      primaryMuscle: 'BICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Incline Dumbbell Curl', priority: 1, suitableWhenPain: ['WRIST'] },
+      ],
+    },
+    {
+      name: 'Bicep — Shortened',
+      primaryMuscle: 'BICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Preacher Curl',      priority: 1, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Machine Curl',       priority: 2, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Concentration Curl', priority: 3, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Spider Curl',        priority: 4, suitableWhenPain: ['SHOULDER'] },
+      ],
+    },
+    {
+      name: 'Bicep — Neutral Brachialis',
+      primaryMuscle: 'BICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Hammer Curl',       priority: 1, suitableWhenPain: [] },
+        { name: 'Cable Hammer Curl', priority: 2, suitableWhenPain: ['ELBOW', 'WRIST'] },
+        { name: 'Reverse Curl',      priority: 3, suitableWhenPain: ['SHOULDER'] },
+      ],
+    },
+    // TRICEPS
+    {
+      name: 'Tricep — Pushdown',
+      primaryMuscle: 'TRICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Tricep Pushdown',     priority: 1, suitableWhenPain: ['SHOULDER'] },
+        { name: 'Cable Rope Pushdown', priority: 2, suitableWhenPain: ['SHOULDER', 'WRIST', 'ELBOW'] },
+        { name: 'Machine Tricep Press',priority: 3, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+        { name: 'Tricep Kickback',     priority: 4, suitableWhenPain: ['SHOULDER', 'WRIST'] },
+      ],
+    },
+    {
+      name: 'Tricep — Overhead Extension',
+      primaryMuscle: 'TRICEPS',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Overhead Tricep Extension',         priority: 1, suitableWhenPain: [] },
+        { name: 'Skull Crusher',                     priority: 2, suitableWhenPain: [] },
+        { name: 'Dumbbell Overhead Tricep Extension',priority: 3, suitableWhenPain: ['SHOULDER'] },
+      ],
+    },
+    {
+      name: 'Tricep — Press Compound',
+      primaryMuscle: 'TRICEPS',
+      movementPattern: 'HORIZONTAL_PUSH',
+      exercises: [
+        { name: 'Close Grip Bench Press', priority: 1, suitableWhenPain: [] },
+        { name: 'Diamond Push-Up',        priority: 2, suitableWhenPain: ['WRIST', 'SHOULDER'] },
+      ],
+    },
+    // CALVES
+    {
+      name: 'Calf — Standing',
+      primaryMuscle: 'CALVES',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Calf Raise',       priority: 1, suitableWhenPain: ['KNEE', 'HIP'] },
+        { name: 'Donkey Calf Raise',priority: 2, suitableWhenPain: ['KNEE', 'HIP'] },
+      ],
+    },
+    {
+      name: 'Calf — Seated',
+      primaryMuscle: 'CALVES',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Seated Calf Raise', priority: 1, suitableWhenPain: ['KNEE', 'HIP', 'ANKLE', 'LOWER_BACK'] },
+      ],
+    },
+    {
+      name: 'Calf — Unilateral',
+      primaryMuscle: 'CALVES',
+      movementPattern: 'ISOLATION',
+      exercises: [
+        { name: 'Single Leg Calf Raise', priority: 1, suitableWhenPain: ['HIP', 'LOWER_BACK'] },
+      ],
+    },
+  ]
+
+  for (const poolDef of poolDefinitions) {
+    const pool = await prisma.substitutionPool.upsert({
+      where: { name: poolDef.name },
+      update: {},
+      create: {
+        name: poolDef.name,
+        primaryMuscle: poolDef.primaryMuscle,
+        movementPattern: poolDef.movementPattern,
+      },
+    })
+
+    for (const exDef of poolDef.exercises) {
+      const exercise = await prisma.exercise.findUnique({
+        where: { name: exDef.name },
+      })
+      if (!exercise) {
+        console.warn(`  ⚠ Pool seed: exercise not found — "${exDef.name}"`)
+        continue
+      }
+      await prisma.substitutionPoolExercise.upsert({
+        where: {
+          poolId_exerciseId: { poolId: pool.id, exerciseId: exercise.id },
+        },
+        update: {
+          priority: exDef.priority,
+          suitableWhenPain: exDef.suitableWhenPain,
+        },
+        create: {
+          poolId: pool.id,
+          exerciseId: exercise.id,
+          priority: exDef.priority,
+          suitableWhenPain: exDef.suitableWhenPain,
+        },
+      })
+    }
+
+    console.log(`  ✓ ${pool.name} (${poolDef.exercises.length} exercises)`)
+  }
+
+  console.log('Substitution pools seeded.')
+  // ─── End Substitution Pools ───────────────────────────────────────────────
 
   // ── WORKOUT TEMPLATES ──────────────────────────────────────────
 const templateDefs = [

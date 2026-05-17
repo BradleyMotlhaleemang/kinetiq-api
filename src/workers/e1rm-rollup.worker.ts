@@ -2,13 +2,17 @@ import { Processor, Process } from '@nestjs/bull';
 import type { Job } from 'bull';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PrDetectionService } from '../prs/pr-detection.service';
 
 export const E1RM_ROLLUP_QUEUE = 'e1rm-rollup';
 
 @Injectable()
 @Processor(E1RM_ROLLUP_QUEUE)
 export class E1rmRollupWorker {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly prDetectionService: PrDetectionService,
+  ) {}
 
   @Process('rollup')
   async handleRollup(job: Job<{ userId: string; workoutId: string }>) {
@@ -65,6 +69,11 @@ export class E1rmRollupWorker {
           date: today,
         },
       });
+
+    }
+
+    if (sets.length > 0) {
+      await this.prDetectionService.detectPRs(userId, workoutId);
     }
   }
 }

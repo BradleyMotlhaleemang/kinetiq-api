@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { BiofeedbackService } from './biofeedback.service';
 import { CreateBiofeedbackDto } from './dto/create-biofeedback.dto';
@@ -16,6 +25,14 @@ export class BiofeedbackController {
   @Get('latest')
   getLatest(@Request() req: any) {
     return this.biofeedback.getLatest(req.user.userId);
+  }
+
+  @Get('pre-population')
+  getPrePopulation(
+    @Request() req: any,
+    @Query('workoutId') workoutId: string,
+  ) {
+    return this.biofeedback.getPrePopulation(req.user.userId, workoutId);
   }
 
   @Get('muscles/:workoutId')

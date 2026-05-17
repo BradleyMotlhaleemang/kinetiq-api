@@ -14,6 +14,7 @@ import { ProgressionEngineService } from '../progression-engine/progression-engi
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { BiofeedbackService } from '../biofeedback/biofeedback.service';
 import { VolumeProgressionService } from '../engine/progression/volume-progression.service';
+import { SubstitutionEngineService } from '../substitution-engine/substitution-engine.service';
 
 @Injectable()
 export class WorkoutsService {
@@ -27,6 +28,7 @@ export class WorkoutsService {
     @InjectQueue(SFL_DAILY_UPDATE_QUEUE) private sflQueue: Queue,
     @InjectQueue(BIOFEEDBACK_PROMPT_QUEUE)
     private biofeedbackPromptQueue: Queue,
+    private readonly substitutionEngine: SubstitutionEngineService,
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
@@ -171,7 +173,7 @@ export class WorkoutsService {
       string,
       number
     > | null;
-    const jointPainLog = recentBiofeedback?.jointPainLog as Record<
+    const jointPainLog = recentBiofeedback?.jointComfortLog as Record<
       string,
       number
     > | null;
@@ -193,12 +195,11 @@ export class WorkoutsService {
     let jointPainScore = 0;
 
     if (recentBiofeedback) {
-      effortScore =
-        recentBiofeedback.effortScore ?? recentBiofeedback.strengthRating ?? null;
+      effortScore = recentBiofeedback.effortScore ?? null;
       const mgf = recentBiofeedback.muscleGroupFeedback?.find(
         (m) => m.muscleGroup === primaryMuscle,
       );
-      pumpScore = mgf?.pumpScore ?? null;
+      pumpScore = recentBiofeedback.pumpScore ?? null;
       volumeSignal = mgf
         ? normalizeVolumeSignal(mgf.volumeSignal)
         : null;
@@ -207,7 +208,7 @@ export class WorkoutsService {
         exercise.primaryMuscle,
         exercise.secondaryMuscles,
       );
-      jointPainScore = Math.max(fromLog, mgf?.jointPainScore ?? 0);
+      jointPainScore = Math.max(fromLog, mgf?.jointComfortScore ?? 0);
     }
 
     const { weekNumber, templateSetCount } =
@@ -219,7 +220,7 @@ export class WorkoutsService {
         exerciseId,
       );
 
-    const prescription = await this.progressionEngine.evaluate(
+    const engineOutput = (await this.progressionEngine.evaluate(
       userId,
       exerciseId,
       exercise.category,
@@ -239,9 +240,43 @@ export class WorkoutsService {
       user.experienceLevel ?? 'INTERMEDIATE',
       weekNumber,
       templateSetCount,
-    );
+    )) as {
+      action: string;
+      weightTarget: number;
+      repRangeLow: number;
+      repRangeHigh: number;
+      setTarget: number;
+      reason: string;
+      enginePhase?: string;
+      physiologicalState?: string;
+      confidence?: string;
+      confidenceLevel?: string;
+      coachingNote?: string | null;
+      progressionStep?: 'REPS' | 'EXECUTION' | 'LOAD' | 'SETS' | null;
+    };
 
-    let setTarget = prescription.setTarget;
+    this.queuePendingProgressionLogWrite({
+      userId,
+      workoutId,
+      exerciseId,
+      action: engineOutput.action,
+      weightTarget: engineOutput.weightTarget,
+      prescribedReps: engineOutput.repRangeLow,
+      prescribedSets: engineOutput.setTarget,
+      physiologicalState: engineOutput.physiologicalState ?? null,
+      confidenceLevel:
+        engineOutput.confidenceLevel ?? engineOutput.confidence ?? null,
+      enginePhase: engineOutput.enginePhase ?? null,
+      reason: engineOutput.reason,
+      contextSnapshot: {
+        workoutId,
+        targetRepRangeLow: engineOutput.repRangeLow,
+        targetRepRangeHigh: engineOutput.repRangeHigh,
+        setTarget: engineOutput.setTarget,
+      },
+    });
+
+    let setTarget = engineOutput.setTarget;
     let volumeProgressionReason: string | undefined;
 
     if (exercise.category !== 'ISOLATION_AUXILIARY') {
@@ -286,7 +321,7 @@ export class WorkoutsService {
       const recentPumpScores = pad3(
         lastThreeBio.map((r) => {
           const mg = r.muscleGroupFeedback[0];
-          return mg?.pumpScore ?? null;
+          return recentBiofeedback?.pumpScore ?? null;
         }),
         null as number | null,
       );
@@ -322,15 +357,32 @@ export class WorkoutsService {
       volumeProgressionReason = volResult.reason;
     }
 
+    const jointPainForSubstitution = this.buildJointPainMap(jointPainLog);
+
+    const substitution = await this.substitutionEngine.evaluate(
+      userId,
+      exerciseId,
+      jointPainForSubstitution,
+    );
+
+    const prescription = {
+      ...engineOutput,
+      confidenceLevel:
+        engineOutput.confidenceLevel ?? engineOutput.confidence ?? null,
+      enginePhase: engineOutput.enginePhase ?? null,
+      physiologicalState: engineOutput.physiologicalState ?? null,
+      coachingNote: engineOutput.coachingNote ?? null,
+      progressionStep: engineOutput.progressionStep ?? null,
+    };
+
     return {
       exerciseId,
-      sessionMode: 'FULL',
-      sessionReadiness: 1,
       ...prescription,
       setTarget,
       ...(volumeProgressionReason !== undefined
         ? { volumeProgressionReason }
         : {}),
+      substitution,
     };
   }
 
@@ -409,6 +461,8 @@ export class WorkoutsService {
     },
   });
 
+  await this.finalizeWorkoutProgressionLogs(userId, workoutId, workout.sets);
+
   await this.e1rmQueue.add('rollup', { userId, workoutId });
   await this.sflQueue.add('update', { userId, workoutId });
 
@@ -422,6 +476,156 @@ export class WorkoutsService {
 
   return completed;
 }
+
+  private queuePendingProgressionLogWrite(input: {
+    userId: string;
+    workoutId: string;
+    exerciseId: string;
+    action: string;
+    weightTarget: number;
+    prescribedReps: number;
+    prescribedSets: number;
+    physiologicalState: string | null;
+    confidenceLevel: string | null;
+    enginePhase: string | null;
+    reason: string;
+    contextSnapshot: Record<string, unknown>;
+  }) {
+    void this.upsertPendingProgressionLog(input).catch(() => undefined);
+  }
+
+  private async upsertPendingProgressionLog(input: {
+    userId: string;
+    workoutId: string;
+    exerciseId: string;
+    action: string;
+    weightTarget: number;
+    prescribedReps: number;
+    prescribedSets: number;
+    physiologicalState: string | null;
+    confidenceLevel: string | null;
+    enginePhase: string | null;
+    reason: string;
+    contextSnapshot: Record<string, unknown>;
+  }) {
+    const pendingLogs = await this.prisma.progressionLog.findMany({
+      where: {
+        userId: input.userId,
+        exerciseId: input.exerciseId,
+        status: 'PENDING',
+      },
+      orderBy: { loggedAt: 'desc' },
+      take: 10,
+    });
+
+    const existing = pendingLogs.find((log) => {
+      const snapshot = log.contextSnapshot as { workoutId?: string } | null;
+      return snapshot?.workoutId === input.workoutId;
+    });
+
+    const data = {
+      action: input.action,
+      weightTarget: input.weightTarget,
+      workoutId: input.workoutId,
+      prescribedReps: input.prescribedReps,
+      prescribedSets: input.prescribedSets,
+      physiologicalState: input.physiologicalState,
+      confidenceLevel: input.confidenceLevel,
+      enginePhase: input.enginePhase,
+      status: 'PENDING' as const,
+      reason: input.reason,
+      contextSnapshot: input.contextSnapshot as Prisma.InputJsonValue,
+    };
+
+    if (existing) {
+      await this.prisma.progressionLog.update({
+        where: { id: existing.id },
+        data,
+      });
+      return;
+    }
+
+    await this.prisma.progressionLog.create({
+      data: {
+        userId: input.userId,
+        exerciseId: input.exerciseId,
+        ...data,
+      },
+    });
+  }
+
+  private async finalizeWorkoutProgressionLogs(
+    userId: string,
+    workoutId: string,
+    sets: Array<{ exerciseId: string }>,
+  ) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const exerciseIds = [...new Set(sets.map((s) => s.exerciseId))];
+
+    await Promise.all(
+      exerciseIds.map(async (exerciseId) => {
+        const pendingLogs = await this.prisma.progressionLog.findMany({
+          where: {
+            userId,
+            exerciseId,
+            status: 'PENDING',
+            workoutId: workoutId,
+          },
+          orderBy: { loggedAt: 'desc' },
+          take: 10,
+        });
+
+        const pending = pendingLogs[0];
+
+        if (!pending) return;
+
+        const perf = await this.prisma.performanceHistory.findFirst({
+          where: {
+            userId,
+            exerciseId,
+            date: { gte: today, lt: tomorrow },
+          },
+          orderBy: { date: 'desc' },
+          select: {
+            bestWeight: true,
+            bestReps: true,
+            totalSets: true,
+          },
+        });
+
+        if (!perf) {
+          await this.prisma.progressionLog.update({
+            where: { id: pending.id },
+            data: { status: 'SKIPPED' },
+          });
+          return;
+        }
+
+        const prescribedSets = pending.prescribedSets ?? 0;
+        const prescribedReps = pending.prescribedReps ?? 0;
+        const completionRate =
+          prescribedSets > 0 ? perf.totalSets / prescribedSets : null;
+        const repCompletionRate =
+          prescribedReps > 0 ? perf.bestReps / prescribedReps : null;
+
+        await this.prisma.progressionLog.update({
+          where: { id: pending.id },
+          data: {
+            actualWeight: perf.bestWeight,
+            actualReps: perf.bestReps,
+            actualSets: perf.totalSets,
+            completionRate,
+            repCompletionRate,
+            status: 'COMPLETED',
+          },
+        });
+      }),
+    );
+  }
 
   private toVolumeKeyForMrv(value: string): string {
     const normalized = value.toUpperCase();
@@ -522,6 +726,15 @@ export class WorkoutsService {
     }
 
     return max;
+  }
+
+  private buildJointPainMap(
+    jointComfortLog: Record<string, number> | null | undefined,
+  ): Record<string, number> {
+    if (!jointComfortLog || Object.keys(jointComfortLog).length === 0) {
+      return {};
+    }
+    return jointComfortLog;
   }
 
   private pickSetsTargetFromMesocycleTemplate(

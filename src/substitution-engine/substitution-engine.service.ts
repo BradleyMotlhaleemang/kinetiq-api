@@ -6,6 +6,11 @@ export interface SubstitutionResult {
   substituteExerciseId?: string;
   substituteName?: string;
   reason: string;
+  candidates?: Array<{
+    exerciseId: string;
+    exerciseName: string;
+    priority: number;
+  }>;
 }
 
 @Injectable()
@@ -49,7 +54,7 @@ export class SubstitutionEngineService {
 
     const poolIds = exercise.substitutionPools.map((sp) => sp.poolId);
 
-    const candidate = await this.prisma.substitutionPoolExercise.findFirst({
+    const candidates = await this.prisma.substitutionPoolExercise.findMany({
       where: {
         poolId: { in: poolIds },
         exerciseId: { not: exerciseId },
@@ -61,31 +66,56 @@ export class SubstitutionEngineService {
       include: { exercise: true },
     });
 
+    const candidate = candidates[0] ?? null;
+
     if (!candidate) {
       return {
         action: 'MONITOR',
-        reason: `Pain score ${maxPain} but no substitute found — monitoring`,
+        reason: `Pain score ${maxPain} on ${painfulJoint ?? 'unknown joint'} — no suitable substitute found in pool`,
+        candidates: [],
       };
     }
 
-    await this.prisma.exerciseSubstitution.create({
-      data: {
-        userId,
-        originalExerciseId: exerciseId,
-        substituteExerciseId: candidate.exerciseId,
-        jointAffected: painfulJoint ?? 'UNKNOWN',
-        painScoreAtSwap: maxPain,
-        status: 'ACTIVE',
-        phase: 1,
-      },
-    });
+    // ExerciseSubstitution record is created only after user confirms
+    // via the substitution confirmation endpoint (Task 2.3).
 
     return {
       action: 'SUBSTITUTE',
       substituteExerciseId: candidate.exerciseId,
       substituteName: candidate.exercise.name,
       reason: `Pain score ${maxPain} on ${painfulJoint} — substituting with ${candidate.exercise.name}`,
+      candidates: candidates.map((c) => ({
+        exerciseId: c.exerciseId,
+        exerciseName: c.exercise.name,
+        priority: c.priority,
+      })),
     };
+  }
+
+  async confirmSubstitution(
+    userId: string,
+    data: {
+      exerciseId: string;
+      substituteExerciseId: string;
+      jointAffected: string;
+      painScoreAtSwap: number;
+    },
+  ) {
+    return this.prisma.exerciseSubstitution.create({
+      data: {
+        userId,
+        originalExerciseId: data.exerciseId,
+        substituteExerciseId: data.substituteExerciseId,
+        jointAffected: data.jointAffected,
+        painScoreAtSwap: data.painScoreAtSwap,
+        status: 'ACTIVE',
+        phase: 1,
+      },
+      include: {
+        originalExercise: true,
+        substituteExercise: true,
+      },
+    });
   }
 
   async getActive(userId: string) {

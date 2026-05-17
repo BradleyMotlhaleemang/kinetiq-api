@@ -19,6 +19,7 @@ import { BodyMetricsModule } from './body-metrics/body-metrics.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SubstitutionEngineModule } from './substitution-engine/substitution-engine.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PrsModule } from './prs/prs.module';
 import { CardioModule } from './cardio/cardio.module';
 import { NutritionModule } from './nutrition/nutrition.module';
 import { TimerModule } from './timer/timer.module';
@@ -55,6 +56,7 @@ import { TemplatesModule } from './templates/templates.module';
     NotificationsModule,
     SubstitutionEngineModule,
     AnalyticsModule,
+    PrsModule,
     CardioModule,
     NutritionModule,
     TimerModule,

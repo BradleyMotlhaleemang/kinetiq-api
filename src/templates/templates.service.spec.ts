@@ -141,22 +141,25 @@ describe('TemplatesService', () => {
 
   // ── findOne ──────────────────────────────────────────────────────
   describe('findOne', () => {
-    it('returns detailed template with trainingDays and programSummary', async () => {
+    it('returns detailed template with splitConfigs and programSummary', async () => {
       mockPrisma.mesocycleTemplate.findFirst.mockResolvedValue(makeMesocycleTemplate());
       const result = await service.findOne('MC-017');
 
       // Detail-specific fields
-      expect(result.trainingDays).toBeDefined();
+      expect(result.splitConfigs).toBeDefined();
       expect(result.programSummary).toBeDefined();
       expect(result.programSummary.totalWeeks).toBe(8);
       expect(result.programSummary.mesocycleBlocks).toBe(1);
 
       // Slot expansion
-      const pushDay = result.trainingDays.find(d => d.dayNumber === 1);
-      expect(pushDay?.workoutTemplate?.slots).toHaveLength(2);
-      expect(pushDay?.workoutTemplate?.slots[0].slotLabel).toBe('Heavy Bench');
-      expect(pushDay?.workoutTemplate?.slots[0].sets).toBe('4');
-      expect(pushDay?.workoutTemplate?.slots[0].reps).toBe('5–8');
+      const pushDay = result.splitConfigs
+        .flatMap((split) => split.days)
+        .find((d) => d.dayNumber === 1);
+      expect(pushDay?.exercises).toHaveLength(2);
+      expect(pushDay?.exercises[0].orderIndex).toBe(1);
+      expect(pushDay?.exercises[0].setsTarget).toBe(4);
+      expect(pushDay?.exercises[0].repRangeMin).toBe(5);
+      expect(pushDay?.exercises[0].repRangeMax).toBe(8);
     });
 
     it('throws NotFoundException for unknown id', async () => {
@@ -167,8 +170,10 @@ describe('TemplatesService', () => {
     it('rest days have null workoutTemplate', async () => {
       mockPrisma.mesocycleTemplate.findFirst.mockResolvedValue(makeMesocycleTemplate());
       const result = await service.findOne('MC-017');
-      const restDay = result.trainingDays.find(d => d.isRestDay);
-      expect(restDay?.workoutTemplate).toBeNull();
+      const restDay = result.splitConfigs
+        .flatMap((split) => split.days)
+        .find((d) => d.dayNumber === 7);
+      expect(restDay?.exercises).toEqual([]);
     });
   });
 
@@ -193,8 +198,7 @@ describe('TemplatesService', () => {
       mockPrisma.mesocycleTemplate.findFirst
         .mockResolvedValueOnce(null)   // exact
         .mockResolvedValueOnce(null);  // fallback
-      const beginnerLevel =
-        (ExperienceLevel as any).BEGINNER ?? ExperienceLevel.NOVICE;
+      const beginnerLevel = ExperienceLevel.BEGINNER;
       await expect(
         service.recommend(beginnerLevel, TrainingGoal.POWERLIFTING, 2),
       ).rejects.toThrow(NotFoundException);

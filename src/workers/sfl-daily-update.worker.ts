@@ -1,6 +1,7 @@
 import { Processor, Process } from '@nestjs/bull';
 import type { Job } from 'bull';
 import { Injectable } from '@nestjs/common';
+import { MuscleGroup } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const SFL_DAILY_UPDATE_QUEUE = 'sfl-daily-update';
@@ -38,14 +39,21 @@ export class SflDailyUpdateWorker {
     const sfl7d  = sumFatigue(since7d);
 
     const muscleFatigueMap: Record<string, number> = {};
-    for (const s of allSets.filter((s) => s.createdAt >= since72h)) {
-      const exercise = await this.prisma.exercise.findUnique({
-        where: { id: s.exerciseId },
-      });
-      if (exercise) {
-        muscleFatigueMap[exercise.primaryMuscle] =
-          (muscleFatigueMap[exercise.primaryMuscle] ?? 0) + (s.fatigueCost ?? 0);
-      }
+    const sets72h = allSets.filter((s) => s.createdAt >= since72h);
+    const uniqueExerciseIds = [...new Set(sets72h.map((s) => s.exerciseId))];
+    const exercises = await this.prisma.exercise.findMany({
+      where: { id: { in: uniqueExerciseIds } },
+      select: { id: true, primaryMuscle: true },
+    });
+    const exerciseMap = new Map<string, MuscleGroup>(
+      exercises.map((e) => [e.id, e.primaryMuscle]),
+    );
+
+    for (const s of sets72h) {
+      const primaryMuscle = exerciseMap.get(s.exerciseId);
+      if (!primaryMuscle) continue;
+      muscleFatigueMap[primaryMuscle] =
+        (muscleFatigueMap[primaryMuscle] ?? 0) + (s.fatigueCost ?? 0);
     }
 
     await this.prisma.fatigueSnapshot.create({

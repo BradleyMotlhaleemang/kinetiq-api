@@ -26,10 +26,14 @@ export class AnalyticsService {
 
     if (!activeMesocycle) return [];
 
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // Monday
+
     const history = await this.prisma.performanceHistory.findMany({
-      where: { userId },
+      where: { userId, date: { gte: weekStart } },
       orderBy: { date: 'desc' },
-      take: 50,
       include: { exercise: true },
     });
 
@@ -51,7 +55,7 @@ export class AnalyticsService {
           ? 'BELOW_MEV'
           : sets > (volumeTargets[muscle]?.mrv ?? 0)
           ? 'ABOVE_MRV'
-          : 'IN_RANGE',
+          : 'OPTIMAL',
     }));
   }
 
@@ -78,30 +82,41 @@ export class AnalyticsService {
   }
 
   async getStrengthTrends(userId: string) {
-    const keyLifts = [
-      'Barbell Back Squat',
-      'Barbell Bench Press',
-      'Conventional Deadlift',
-      'Barbell Overhead Press',
-      'Barbell Row',
-    ];
-
-    const exercises = await this.prisma.exercise.findMany({
-      where: { name: { in: keyLifts } },
+    // Find the exercises this user has actually logged, ranked by session count
+    const topPerformance = await this.prisma.performanceHistory.findMany({
+      where: { userId },
+      distinct: ['exerciseId'],
+      orderBy: { date: 'desc' },
+      take: 5,
+      include: { exercise: true },
     });
 
-    const results: { exercise: string; history: { date: Date; bestE1rm: number; bestWeight: number }[] }[] = [];
-    for (const exercise of exercises) {
-      const history = await this.prisma.performanceHistory.findMany({
-        where: { userId, exerciseId: exercise.id },
+    const exerciseIds = topPerformance.map((p) => p.exerciseId);
+
+    const [allHistory, exercises] = await Promise.all([
+      this.prisma.performanceHistory.findMany({
+        where: { userId, exerciseId: { in: exerciseIds } },
         orderBy: { date: 'asc' },
-        take: 12,
-        select: { date: true, bestE1rm: true, bestWeight: true },
-      });
-      results.push({ exercise: exercise.name, history });
+        select: { exerciseId: true, date: true, bestE1rm: true, bestWeight: true },
+      }),
+      this.prisma.exercise.findMany({
+        where: { id: { in: exerciseIds } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const nameMap = new Map(exercises.map((e) => [e.id, e.name]));
+    const historyByExercise = new Map<string, typeof allHistory>();
+    for (const record of allHistory) {
+      const bucket = historyByExercise.get(record.exerciseId) ?? [];
+      bucket.push(record);
+      historyByExercise.set(record.exerciseId, bucket);
     }
 
-    return results;
+    return exerciseIds.map((id) => ({
+      exercise: nameMap.get(id) ?? id,
+      history: (historyByExercise.get(id) ?? []).slice(-12),
+    }));
   }
 
   async getInsights(userId: string) {

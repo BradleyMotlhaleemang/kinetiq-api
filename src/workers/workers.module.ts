@@ -9,10 +9,12 @@ import {
   BIOFEEDBACK_PROMPT_QUEUE,
 } from './biofeedback-prompt.worker';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PrsModule } from '../prs/prs.module';
 
 @Module({
   imports: [
     NotificationsModule,
+    PrsModule,
     BullModule.registerQueue(
       { name: E1RM_ROLLUP_QUEUE },
       { name: SFL_DAILY_UPDATE_QUEUE },

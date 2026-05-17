@@ -44,6 +44,94 @@ enum ExerciseCategory {
   ISOLATION_AUXILIARY
 }
 
+enum MuscleGroup {
+  CHEST
+  BACK
+  LATS
+  FRONT_DELT
+  SIDE_DELT
+  REAR_DELT
+  QUADS
+  HAMSTRINGS
+  GLUTES
+  BICEPS
+  TRICEPS
+  CALVES
+  LOWER_BACK
+}
+
+enum MovementPattern {
+  HORIZONTAL_PUSH
+  VERTICAL_PUSH
+  HORIZONTAL_PULL
+  VERTICAL_PULL
+  SQUAT
+  HINGE
+  ISOLATION
+}
+
+enum ExerciseType {
+  COMPOUND
+  ISOLATION
+}
+
+enum MovementClass {
+  BACK_STRAIGHT_ARM_PULL
+  BACK_VERTICAL_PULL
+  BACK_HORIZONTAL_PULL
+  BACK_AXIAL_HINGE
+  GLUTE_HIP_THRUST
+  GLUTE_HIP_HINGE
+  GLUTE_SQUAT
+  GLUTE_HIP_ABDUCTION
+  GLUTE_KICKBACK
+  CALF_STANDING
+  CALF_SEATED
+  CALF_UNILATERAL
+  CALF_STRETCH_BIASED
+  CORE_SPINAL_FLEXION
+  CORE_ANTI_EXTENSION
+  CORE_ANTI_ROTATION
+  CORE_ROTATION
+  CORE_HIP_FLEXION
+  CORE_LOADED_CARRY
+  // Chest
+  CHEST_HORIZONTAL_PRESS
+  CHEST_INCLINE_PRESS
+  CHEST_ADDUCTION_FLY
+  CHEST_STRETCH_BIASED
+
+  // Shoulders
+  SHOULDER_VERTICAL_PRESS
+  SHOULDER_LATERAL_ABDUCTION
+  SHOULDER_REAR_DELT
+  SHOULDER_LENGTHENED
+
+  // Biceps
+  BICEP_SUPINATED_CURL
+  BICEP_LENGTHENED
+  BICEP_SHORTENED
+  BICEP_NEUTRAL_BRACHIALIS
+
+  // Triceps
+  TRICEP_PRESS_COMPOUND
+  TRICEP_PUSHDOWN
+  TRICEP_OVERHEAD_EXTENSION
+  TRICEP_LENGTHENED
+
+  // Quads
+  QUAD_BILATERAL_SQUAT
+  QUAD_MACHINE_PRESS
+  QUAD_UNILATERAL
+  QUAD_KNEE_EXTENSION
+
+  // Hamstrings
+  HAMSTRING_HIP_HINGE
+  HAMSTRING_KNEE_FLEXION
+  HAMSTRING_UNILATERAL
+  HAMSTRING_LENGTHENED
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
@@ -94,10 +182,11 @@ muscleGroupFeedback MuscleGroupFeedback[]
 model Exercise {
   id               String                     @id @default(cuid())
   name             String                     @unique
-  primaryMuscle    String
-  secondaryMuscles String[]
-  movementPattern  String
-  exerciseType     String
+  primaryMuscle    MuscleGroup
+  secondaryMuscles MuscleGroup[]
+  movementPattern  MovementPattern
+  exerciseType     ExerciseType
+  movementClass    MovementClass?
   category         ExerciseCategory           @default(PRIMARY_COMPOUND)
   isCompound       Boolean                    @default(true)
   metadata         ExerciseMetadata?
@@ -414,22 +503,67 @@ model ProgressionLog {
   exercise        Exercise @relation(fields: [exerciseId], references: [id])
   action          String
   weightTarget    Float?
+  prescribedWeight    Float?
+  prescribedReps      Int?
+  prescribedSets      Int?
+  actualWeight        Float?
+  actualReps          Int?
+  actualSets          Int?
+  completionRate      Float?
+  repCompletionRate   Float?
+  physiologicalState  String?
+  confidenceLevel     String?
+  enginePhase         String?
+  status              ProgressionLogStatus @default(PENDING)
+  workoutId           String?
   reason          String
   contextSnapshot Json?
   loggedAt        DateTime @default(now())
+
+  @@index([workoutId])
+}
+
+enum ProgressionLogStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+}
+
+enum PRScope {
+  ALL_TIME
+  MESOCYCLE
+  MONTHLY
+}
+
+enum PRType {
+  E1RM
+  WEIGHT
+  VOLUME
 }
 
 model PRRecord {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  exerciseId  String
-  exercise    Exercise @relation(fields: [exerciseId], references: [id])
-  prType      String
-  value       Float
-  achievedAt  DateTime @default(now())
-  workoutId   String
-  workout     Workout  @relation(fields: [workoutId], references: [id])
+  id            String    @id @default(cuid())
+  userId        String
+  exerciseId    String
+  workoutId     String
+  setId         String?
+  mesocycleId   String?
+  monthYear     String?
+  scope         PRScope
+  type          PRType
+  equipmentName String?
+  value         Float
+  weight        Float
+  reps          Int
+  e1rm          Float
+  achievedAt    DateTime  @default(now())
+
+  user          User      @relation(fields: [userId], references: [id])
+  exercise      Exercise  @relation(fields: [exerciseId], references: [id])
+  workout       Workout   @relation(fields: [workoutId], references: [id])
+
+  @@index([userId, exerciseId, scope, type])
+  @@index([userId, achievedAt])
 }
 
 model PlateauMarker {
@@ -450,12 +584,11 @@ model BioFeedback {
   workoutId        String?  @unique
   workout          Workout? @relation(fields: [workoutId], references: [id])
   sorenessLog      Json
-  jointPainLog     Json
-  energyLevel      Int
-  strengthRating   Int
-  muscleFeel       Int
-  sleepLastNight   Int
-  overallWellbeing Int
+  jointComfortLog  Json
+  globalJointComfortScore Int
+  trainingDrive    Int
+  sessionPerformance Int
+  pumpScore        Int
   effortScore      Int?
   loggedAt         DateTime @default(now())
   muscleGroupFeedback MuscleGroupFeedback[]
@@ -631,14 +764,11 @@ model MuscleGroupFeedback {
   workoutId     String
   muscleGroup   String
 
-  jointPain      String
-  jointPainScore Int
+  jointComfort      String
+  jointComfortScore Int
 
   soreness       String
   sorenessScore  Float
-
-  pump           String
-  pumpScore      Float
 
   volume         String
   volumeSignal   Float

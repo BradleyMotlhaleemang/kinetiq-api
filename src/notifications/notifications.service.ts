@@ -21,6 +21,7 @@ export class NotificationsService {
     payload?: Record<string, any>,
     deliveryChannel = 'IN_APP',
   ) {
+    if (type === 'MEAL_REMINDER') return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -113,16 +114,20 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
-  getRedirectRoute(type: string): string {
+  getRedirectRoute(type: string, payload?: Record<string, any>): string {
     const routes: Record<string, string> = {
       BIOFEEDBACK_PROMPT: '/biofeedback',
       RECOVERY_WARNING: '/dashboard',
-      PAIN_REVIEW_PROMPT: '/substitutions',
+      PAIN_REVIEW_PROMPT: '/dashboard',
       WORKOUT_REMINDER: '/dashboard',
       WEEKLY_FEEDBACK_PROMPT: '/weekly-feedback',
       MEAL_REMINDER: '/nutrition',
       WEIGHT_LOG_REMINDER: '/profile',
     };
-    return routes[type] ?? '/dashboard';
+    const base = routes[type] ?? '/dashboard';
+    if (type === 'BIOFEEDBACK_PROMPT' && payload?.workoutId) {
+      return `${base}?workoutId=${String(payload.workoutId)}`;
+    }
+    return base;
   }
 }

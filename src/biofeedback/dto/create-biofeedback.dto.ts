@@ -15,13 +15,10 @@ export class MuscleGroupFeedbackItemDto {
   muscleGroup!: string;
 
   @IsString()
-  jointPain!: string;
+  jointComfort!: string;
 
   @IsString()
   soreness!: string;
-
-  @IsString()
-  pump!: string;
 
   @IsString()
   volume!: string;
@@ -36,22 +33,21 @@ export class CreateBiofeedbackDto {
   sorenessLog!: Record<string, number>;
 
   @IsObject()
-  jointPainLog!: Record<string, number>;
+  jointComfortLog!: Record<string, number>;
 
   @IsInt()
-  energyLevel!: number;
+  globalJointComfortScore!: number;
 
   @IsInt()
-  strengthRating!: number;
+  trainingDrive!: number;
 
   @IsInt()
-  muscleFeel!: number;
+  sessionPerformance!: number;
 
   @IsInt()
-  sleepLastNight!: number;
-
-  @IsInt()
-  overallWellbeing!: number;
+  @Min(1)
+  @Max(5)
+  pumpScore!: number;
 
   @IsOptional()
   @IsArray()

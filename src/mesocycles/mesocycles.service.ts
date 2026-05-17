@@ -234,9 +234,14 @@ export class MesocyclesService {
       orderBy: { createdAt: 'desc' },
       include: {
         workouts: {
-          take: 1,
+          where: { weekNumber: 1 },
           orderBy: [{ weekNumber: 'asc' }, { dayNumber: 'asc' }],
-          select: { prescriptionSnapshot: true },
+          select: {
+            prescriptionSnapshot: true,
+            splitDayLabel: true,
+            weekNumber: true,
+            dayNumber: true,
+          },
         },
       },
     });

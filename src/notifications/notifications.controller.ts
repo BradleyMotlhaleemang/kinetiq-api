@@ -27,7 +27,7 @@ export class NotificationsController {
       ...result,
       data: result.data.map((n) => ({
         ...n,
-        redirectRoute: this.notifications.getRedirectRoute(n.type),
+        redirectRoute: this.notifications.getRedirectRoute(n.type, n.payload as Record<string, any> ?? undefined),
       })),
     };
   }
