@@ -90,6 +90,19 @@ export class WorkoutsService {
     return workout;
   }
 
+  private async validateWorkoutOwnership(
+    userId: string,
+    workoutId: string,
+  ): Promise<void> {
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+      select: { id: true },
+    });
+    if (!workout) {
+      throw new NotFoundException(`Workout ${workoutId} not found`);
+    }
+  }
+
   async findHistory(userId: string) {
     return this.prisma.workout.findMany({
       where: { userId, status: 'COMPLETED' },
@@ -395,7 +408,7 @@ export class WorkoutsService {
     reps: number,
     rpe?: number,
   ) {
-    await this.findOne(userId, workoutId);
+    await this.validateWorkoutOwnership(userId, workoutId);
 
     const e1rm = weight * (1 + reps / 30);
     const effectiveReps = rpe && rpe >= 7 ? reps * ((rpe - 6) / 4) : reps * 0.5;
@@ -461,18 +474,25 @@ export class WorkoutsService {
     },
   });
 
-  await this.finalizeWorkoutProgressionLogs(userId, workoutId, workout.sets);
-
-  await this.e1rmQueue.add('rollup', { userId, workoutId });
-  await this.sflQueue.add('update', { userId, workoutId });
+  try {
+    await this.finalizeWorkoutProgressionLogs(userId, workoutId, workout.sets);
+  } catch (err) {
+    console.error('[complete] Progression log finalization failed — non-blocking:', err);
+  }
 
   const promptPayload = { userId, workoutId };
-  await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
-    delay: BIOFEEDBACK_PROMPT_DELAY_2H_MS,
-  });
-  await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
-    delay: getMsUntilNextDay11am(),
-  });
+  try {
+    await this.e1rmQueue.add('rollup', { userId, workoutId });
+    await this.sflQueue.add('update', { userId, workoutId });
+    await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+      delay: BIOFEEDBACK_PROMPT_DELAY_2H_MS,
+    });
+    await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+      delay: getMsUntilNextDay11am(),
+    });
+  } catch (err) {
+    console.error('[complete] Queue dispatch failed — non-blocking:', err);
+  }
 
   return completed;
 }
