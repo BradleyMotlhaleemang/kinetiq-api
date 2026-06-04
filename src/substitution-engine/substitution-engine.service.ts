@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfirmSubstitutionDto } from './dto/confirm-substitution.dto';
 
 export interface SubstitutionResult {
   action: 'NONE' | 'MONITOR' | 'SUBSTITUTE';
@@ -92,22 +93,14 @@ export class SubstitutionEngineService {
     };
   }
 
-  async confirmSubstitution(
-    userId: string,
-    data: {
-      exerciseId: string;
-      substituteExerciseId: string;
-      jointAffected: string;
-      painScoreAtSwap: number;
-    },
-  ) {
-    return this.prisma.exerciseSubstitution.create({
+  async confirmSubstitution(userId: string, data: ConfirmSubstitutionDto) {
+    const substitution = await this.prisma.exerciseSubstitution.create({
       data: {
         userId,
         originalExerciseId: data.exerciseId,
         substituteExerciseId: data.substituteExerciseId,
         jointAffected: data.jointAffected,
-        painScoreAtSwap: data.painScoreAtSwap,
+        painScoreAtSwap: data.painScoreAtSwap ?? 0,
         status: 'ACTIVE',
         phase: 1,
       },
@@ -116,6 +109,18 @@ export class SubstitutionEngineService {
         substituteExercise: true,
       },
     });
+
+    await this.prisma.workoutExercise.updateMany({
+      where: {
+        workoutId: data.workoutId,
+        exerciseId: data.exerciseId,
+      },
+      data: {
+        exerciseId: data.substituteExerciseId,
+      },
+    });
+
+    return substitution;
   }
 
   async getActive(userId: string) {

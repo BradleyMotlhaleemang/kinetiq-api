@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ConfirmSubstitutionDto } from './dto/confirm-substitution.dto';
 import { SubstitutionEngineService } from './substitution-engine.service';
 
 @UseGuards(AuthGuard('jwt'))
@@ -12,12 +13,7 @@ export class SubstitutionEngineController {
   @Post('confirm')
   async confirm(
     @Request() req: any,
-    @Body() body: {
-      exerciseId: string;
-      substituteExerciseId: string;
-      jointAffected: string;
-      painScoreAtSwap: number;
-    },
+    @Body() body: ConfirmSubstitutionDto,
   ) {
     return this.substitutionEngine.confirmSubstitution(req.user.userId, body);
   }

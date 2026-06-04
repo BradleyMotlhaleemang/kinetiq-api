@@ -15,8 +15,22 @@ async function bootstrap() {
     transform: true,
   }));
 
+  const isDev = process.env.NODE_ENV !== 'production';
   app.enableCors({
-    origin: ['http://localhost:3001', 'http://localhost:3000'],
+    origin: isDev
+      ? (origin, callback) => {
+          if (!origin) {
+            callback(null, true);
+            return;
+          }
+          const allowed =
+            origin.startsWith('http://localhost:') ||
+            origin.startsWith('http://127.0.0.1:') ||
+            /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/.test(origin) ||
+            /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:\d+$/.test(origin);
+          callback(null, allowed);
+        }
+      : ['http://localhost:3001', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],

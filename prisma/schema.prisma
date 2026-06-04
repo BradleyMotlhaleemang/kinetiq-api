@@ -37,6 +37,17 @@ enum WorkoutStatus {
   ABANDONED
 }
 
+enum DayType {
+  WORKOUT
+  REST
+}
+
+enum SessionType {
+  MESOCYCLE
+  SPLIT
+  STANDALONE
+}
+
 enum ExerciseCategory {
   PRIMARY_COMPOUND
   COMPOUND_ACCESSORY
@@ -177,6 +188,7 @@ model User {
   passwordResetToken       String?
 passwordResetTokenExpiry DateTime?
 muscleGroupFeedback MuscleGroupFeedback[]
+  splitTemplates      SplitTemplate[]
 }
 
 model Exercise {
@@ -199,6 +211,8 @@ model Exercise {
   originalSubstitutions  ExerciseSubstitution[] @relation("OriginalExercise")
   substituteSubstitutions ExerciseSubstitution[] @relation("SubstituteExercise")
   exerciseSFRs     UserExerciseSFR[]
+  splitDayExercises SplitDayExercise[]
+  workoutExercises  WorkoutExercise[]
 }
 
 model ExerciseMetadata {
@@ -250,23 +264,28 @@ model SubstitutionPoolExercise {
   @@unique([poolId, exerciseId])
 }
 
-model WorkoutTemplate {
+model SplitTemplate {
   id              String              @id @default(uuid())
-  slug            String              @unique
+  userId          String?
+  user            User?               @relation(fields: [userId], references: [id])
+  slug            String?             @unique
   name            String              @unique
   level           ExperienceLevel
   goal            TrainingGoal
   primaryMuscle   String
 
+  isSystem        Boolean             @default(false)
+  splitLabel      String
   splitType       String
   daysPerWeek     Int
   description     String?
   goalTags        String[]
   experienceTags  String[]
 
-  slots           TemplateSlot[]
-  days            WorkoutTemplateDay[]
-  splits          SplitConfig[]
+  days            SplitDay[]
+  mesocycleTemplates MesocycleTemplate[]
+  mesocycles      Mesocycle[]
+  workouts        Workout[]
 
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -274,21 +293,17 @@ model WorkoutTemplate {
   @@index([level, goal])
 }
 
-model SplitConfig {
-  id         String          @id @default(cuid())
-  templateId String
-  template   WorkoutTemplate @relation(fields: [templateId], references: [id])
-  splitLabel String
-  days       SplitDay[]
-}
-
 model SplitDay {
-  id            String             @id @default(cuid())
-  splitConfigId String
-  splitConfig   SplitConfig        @relation(fields: [splitConfigId], references: [id])
-  dayNumber     Int
-  label         String
-  exercises     SplitDayExercise[]
+  id              String             @id @default(cuid())
+  splitTemplateId String
+  splitTemplate   SplitTemplate      @relation(fields: [splitTemplateId], references: [id])
+  dayNumber       Int
+  dayType         DayType
+  label           String
+  exercises       SplitDayExercise[]
+  workouts        Workout[]
+
+  @@unique([splitTemplateId, dayNumber])
 }
 
 model SplitDayExercise {
@@ -296,6 +311,7 @@ model SplitDayExercise {
   splitDayId  String
   splitDay    SplitDay @relation(fields: [splitDayId], references: [id])
   exerciseId  String
+  exercise    Exercise @relation(fields: [exerciseId], references: [id])
   orderIndex  Int
   setsTarget  Int
   repRangeMin Int
@@ -312,29 +328,14 @@ model Mesocycle {
   currentWeek    Int        @default(1)
   totalWeeks     Int        @default(8)
   volumeTargets  Json
-  templateId     String?
-  template       MesocycleTemplate? @relation("TemplateSource", fields: [templateId], references: [id])
+  mesocycleTemplateId String?
+  mesocycleTemplate   MesocycleTemplate? @relation("TemplateSource", fields: [mesocycleTemplateId], references: [id])
+  splitTemplateId     String
+  splitTemplate       SplitTemplate @relation(fields: [splitTemplateId], references: [id])
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   workouts       Workout[]
   weeklyFeedback     WeeklyFeedback[]
-}
-
-model TemplateSlot {
-  id                  String          @id @default(uuid())
-  workoutTemplateId   String
-  order               Int
-  slotLabel           String
-  setsMin             Int
-  setsMax             Int
-  repsMin             Int
-  repsMax             Int
-  rpeMin              Float
-  rpeMax              Float
-  notes               String?
-  workoutTemplate     WorkoutTemplate @relation(fields: [workoutTemplateId], references: [id], onDelete: Cascade)
-
-  @@index([workoutTemplateId, order])
 }
 
 model MesocycleTemplate {
@@ -343,37 +344,21 @@ model MesocycleTemplate {
   name              String
   level             ExperienceLevel
   goal              TrainingGoal
-  splitStyle        SplitStyle
-  primaryFocus      String
+  splitTemplateId   String
+  splitTemplate     SplitTemplate       @relation(fields: [splitTemplateId], references: [id])
   durationWeeksMin  Int
   durationWeeksMax  Int
-  daysPerWeek       Int
   progressionType   String
   progressionNotes  String?
   deloadWeek        Int?
   deloadNotes       String?
   difficultyWarning String?
   featured          Boolean             @default(false)
-  days              WorkoutTemplateDay[]
   mesocycles        Mesocycle[]         @relation("TemplateSource")
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
-  @@index([level, goal, splitStyle])
-}
-
-model WorkoutTemplateDay {
-  id                    String             @id @default(uuid())
-  mesocycleTemplateId   String
-  dayNumber             Int
-  label                 String
-  isRestDay             Boolean            @default(false)
-  workoutTemplateId     String?
-  workoutTemplate       WorkoutTemplate?   @relation(fields: [workoutTemplateId], references: [id])
-  mesocycleTemplate     MesocycleTemplate  @relation(fields: [mesocycleTemplateId], references: [id], onDelete: Cascade)
-
-  @@index([mesocycleTemplateId, dayNumber])
-  @@unique([mesocycleTemplateId, dayNumber])
+  @@index([level, goal])
 }
 
 model Workout {
@@ -382,9 +367,13 @@ model Workout {
   user               User             @relation(fields: [userId], references: [id])
   mesocycleId        String?
   mesocycle          Mesocycle?       @relation(fields: [mesocycleId], references: [id])
+  splitTemplateId    String?
+  splitTemplate      SplitTemplate?   @relation(fields: [splitTemplateId], references: [id])
+  splitDayId         String?
+  splitDay           SplitDay?        @relation(fields: [splitDayId], references: [id])
   weekNumber         Int?
   dayNumber          Int?
-  sessionType        String?
+  sessionType        SessionType
   date               DateTime?
   splitDayLabel      String?
   status             WorkoutStatus    @default(PLANNED)
@@ -404,6 +393,24 @@ model Workout {
   prRecords          PRRecord[]
   bioFeedback          BioFeedback?
   setRestLogs      SetRestLog[]
+  workoutExercises  WorkoutExercise[]
+}
+
+model WorkoutExercise {
+  id               String   @id @default(cuid())
+  workoutId        String
+  workout          Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exerciseId       String
+  exercise         Exercise @relation(fields: [exerciseId], references: [id])
+  orderIndex       Int
+  setsTarget       Int
+  repRangeMin      Int
+  repRangeMax      Int
+  sourceExerciseId String?
+  createdAt        DateTime @default(now())
+
+  @@unique([workoutId, exerciseId])
+  @@index([workoutId])
 }
 
 model Set {
@@ -424,6 +431,8 @@ model Set {
   prType           String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@unique([workoutId, exerciseId, setNumber])
 }
 
 model SessionReadiness {

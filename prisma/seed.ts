@@ -4,6 +4,7 @@ dotenv.config()
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import * as bcrypt from 'bcrypt'
+import { seedSplitCatalog } from './seed-split-catalog'
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -742,7 +743,15 @@ async function main() {
   console.log('Substitution pools seeded.')
   // ─── End Substitution Pools ───────────────────────────────────────────────
 
-  // ── WORKOUT TEMPLATES ──────────────────────────────────────────
+  const seedSplitCatalogFlag =
+    process.env.SEED_SPLIT_CATALOG === 'true' ||
+    process.env.SEED_SPLIT_CATALOG === '1'
+
+  if (seedSplitCatalogFlag) {
+    await seedSplitCatalog(prisma)
+    console.log('Split template catalog seeded (10 templates).')
+  } else {
+  // ── LEGACY WORKOUT TEMPLATES (use SEED_SPLIT_CATALOG=true for catalog) ──
 const templateDefs = [
   {
     name: 'Push Pull Legs',
@@ -860,8 +869,29 @@ const templateDefs = [
   },
 ]
 
-for (const t of templateDefs) {
-  const existing = await prisma.workoutTemplate.findUnique({ where: { name: t.name } })
+  const splitTypeListRaw = process.env.SEED_SPLIT_TYPES
+  if (!splitTypeListRaw) {
+    throw new Error(
+      'Split type list required before split seeding. Re-run with SEED_SPLIT_TYPES="PPL,UPPER_LOWER,FULL_BODY" (comma-separated). No split records were written.',
+    )
+  }
+  const requestedSplitTypes = new Set(
+    splitTypeListRaw
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => value.length > 0),
+  )
+  if (requestedSplitTypes.size === 0) {
+    throw new Error(
+      'SEED_SPLIT_TYPES was provided but empty after parsing. Provide at least one split type before split seeding.',
+    )
+  }
+  const templateDefsToSeed = templateDefs.filter((template) =>
+    requestedSplitTypes.has(template.splitType.toUpperCase()),
+  )
+
+for (const t of templateDefsToSeed) {
+  const existing = await prisma.splitTemplate.findUnique({ where: { name: t.name } })
   const defaultSlug = t.name.toUpperCase().replace(/[^A-Z0-9]+/g, '-')
   const defaultPrimaryMuscle = t.splitType.includes('PPL')
     ? 'Push'
@@ -871,13 +901,15 @@ for (const t of templateDefs) {
         ? 'Full Body'
         : 'Balanced'
   if (!existing) {
-    const template = await prisma.workoutTemplate.create({
+    const template = await prisma.splitTemplate.create({
       data: {
         slug: `LEGACY-${defaultSlug}`,
         name: t.name,
         level: 'INTERMEDIATE',
         goal: 'HYPERTROPHY',
         primaryMuscle: defaultPrimaryMuscle,
+        isSystem: true,
+        splitLabel: t.splits[0]?.label ?? t.name,
         splitType: t.splitType,
         daysPerWeek: t.daysPerWeek,
         description: t.description ?? null,
@@ -886,12 +918,14 @@ for (const t of templateDefs) {
       },
     })
     for (const split of t.splits) {
-      const config = await prisma.splitConfig.create({
-        data: { templateId: template.id, splitLabel: split.label },
-      })
       for (const day of split.days) {
         await prisma.splitDay.create({
-          data: { splitConfigId: config.id, dayNumber: day.dayNumber, label: day.label },
+          data: {
+            splitTemplateId: template.id,
+            dayNumber: day.dayNumber,
+            dayType: 'WORKOUT',
+            label: day.label,
+          },
         })
       }
     }
@@ -1105,7 +1139,11 @@ for (const t of templateDefs) {
     throw new Error(`Missing template exercises: ${missingExercises.join(', ')}`)
   }
 
-  for (const templateSeed of workoutTemplates) {
+  const workoutTemplatesToSeed = workoutTemplates.filter((template) =>
+    requestedSplitTypes.has(template.splitType.toUpperCase()),
+  )
+
+  for (const templateSeed of workoutTemplatesToSeed) {
     const templateSlug = `LEGACY-${templateSeed.name.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}`
     const templatePrimaryMuscle = templateSeed.splitType.includes('PPL')
       ? 'Push'
@@ -1114,13 +1152,15 @@ for (const t of templateDefs) {
         : templateSeed.splitType.includes('FULL')
           ? 'Full Body'
           : 'Balanced'
-    const template = await prisma.workoutTemplate.upsert({
+    const template = await prisma.splitTemplate.upsert({
       where: { name: templateSeed.name },
       update: {
         slug: templateSlug,
         level: 'INTERMEDIATE',
         goal: 'HYPERTROPHY',
         primaryMuscle: templatePrimaryMuscle,
+        isSystem: true,
+        splitLabel: templateSeed.splitLabel,
         splitType: templateSeed.splitType,
         daysPerWeek: templateSeed.daysPerWeek,
         description: null,
@@ -1133,6 +1173,8 @@ for (const t of templateDefs) {
         level: 'INTERMEDIATE',
         goal: 'HYPERTROPHY',
         primaryMuscle: templatePrimaryMuscle,
+        isSystem: true,
+        splitLabel: templateSeed.splitLabel,
         splitType: templateSeed.splitType,
         daysPerWeek: templateSeed.daysPerWeek,
         description: null,
@@ -1141,56 +1183,36 @@ for (const t of templateDefs) {
       },
     })
 
-    const existingSplitConfigs = await prisma.splitConfig.findMany({
-      where: { templateId: template.id },
+    const existingSplitDays = await prisma.splitDay.findMany({
+      where: { splitTemplateId: template.id },
       select: { id: true },
     })
 
-    const existingSplitConfigIds = existingSplitConfigs.map((splitConfig) => splitConfig.id)
+    const existingSplitDayIds = existingSplitDays.map((splitDay) => splitDay.id)
 
-    if (existingSplitConfigIds.length > 0) {
-      const existingSplitDays = await prisma.splitDay.findMany({
+    if (existingSplitDayIds.length > 0) {
+      await prisma.splitDayExercise.deleteMany({
         where: {
-          splitConfigId: {
-            in: existingSplitConfigIds,
+          splitDayId: {
+            in: existingSplitDayIds,
           },
         },
-        select: { id: true },
-      })
-      
-
-      const existingSplitDayIds = existingSplitDays.map((splitDay) => splitDay.id)
-
-      if (existingSplitDayIds.length > 0) {
-        await prisma.splitDayExercise.deleteMany({
-          where: {
-            splitDayId: {
-              in: existingSplitDayIds,
-            },
-          },
-        })
-      }
-
-      await prisma.splitDay.deleteMany({
-        where: {
-          splitConfigId: {
-            in: existingSplitConfigIds,
-          },
-        },
-      })
-
-      await prisma.splitConfig.deleteMany({
-        where: { templateId: template.id },
       })
     }
 
-    await prisma.splitConfig.create({
+    await prisma.splitDay.deleteMany({
+      where: {
+        splitTemplateId: template.id,
+      },
+    })
+
+    await prisma.splitTemplate.update({
+      where: { id: template.id },
       data: {
-        templateId: template.id,
-        splitLabel: templateSeed.splitLabel,
         days: {
           create: templateSeed.days.map((day) => ({
             dayNumber: day.dayNumber,
+            dayType: 'WORKOUT',
             label: day.label,
             exercises: {
               create: day.exercises.map((exercise, index) => ({
@@ -1205,6 +1227,7 @@ for (const t of templateDefs) {
         },
       },
     })
+  }
   }
 
   const devPassword = process.env.DEV_SEED_PASSWORD ?? 'DevPass123!'

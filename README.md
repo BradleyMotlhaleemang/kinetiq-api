@@ -78,6 +78,20 @@ npx prisma migrate dev
 npx prisma db seed
 ```
 
+To seed the **10 split template catalog** (Full Body, Upper/Lower, PPL, etc. with full exercise prescriptions):
+
+```bash
+SEED_SPLIT_CATALOG=true npx prisma db seed
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:SEED_SPLIT_CATALOG="true"; npx prisma db seed
+```
+
+Without `SEED_SPLIT_CATALOG`, the seed still loads exercises and substitution pools, but uses the legacy split template path (requires `SEED_SPLIT_TYPES`).
+
 Alternative direct command:
 
 ```bash

@@ -9,13 +9,17 @@ export interface TemplateExerciseDto {
 }
 
 export interface TemplateDayDto {
+  id: string;
   dayNumber: number;
   label: string;
+  dayType: 'WORKOUT' | 'REST';
   exercises: Array<{
+    id?: string;
     orderIndex: number;
     setsTarget: number;
     repRangeMin: number;
     repRangeMax: number;
+    exerciseId?: string;
     exercise: TemplateExerciseDto | null;
   }>;
 }
@@ -56,26 +60,36 @@ export interface TemplateDetailDto extends TemplateListItemDto {
   };
 }
 
-type WorkoutTemplateWithSplit = Awaited<
-  ReturnType<
-    PrismaService['workoutTemplate']['findFirst']
-  >
-> & {
-  splits: Array<{
+type SplitTemplateRecord = {
+  id: string;
+  slug: string | null;
+  name: string;
+  level: string;
+  goal: string;
+  primaryMuscle: string;
+  splitLabel: string;
+  splitType: string;
+  daysPerWeek: number;
+  description: string | null;
+  goalTags: string[];
+  experienceTags: string[];
+  days: Array<{
     id: string;
-    splitLabel: string;
-    days: Array<{
+    dayNumber: number;
+    dayType: 'WORKOUT' | 'REST';
+    label: string;
+    exercises: Array<{
       id: string;
-      dayNumber: number;
-      label: string;
-      exercises: Array<{
+      exerciseId: string;
+      orderIndex: number;
+      setsTarget: number;
+      repRangeMin: number;
+      repRangeMax: number;
+      exercise: {
         id: string;
-        exerciseId: string;
-        orderIndex: number;
-        setsTarget: number;
-        repRangeMin: number;
-        repRangeMax: number;
-      }>;
+        name: string;
+        primaryMuscle: string;
+      } | null;
     }>;
   }>;
 };
@@ -85,6 +99,8 @@ function splitStyleLabel(splitType: string): string {
     PPL: 'Push / Pull / Legs',
     UPPER_LOWER: 'Upper / Lower',
     FULL_BODY: 'Full Body',
+    HYBRID: 'Hybrid',
+    BODY_PART: 'Body Part',
     POWERLIFTING: 'Powerlifting',
     POWERBUILDING: 'Powerbuilding',
     GLUTE_FOCUS: 'Glute Focus',
@@ -105,18 +121,32 @@ function titleCaseValue(input: string | null | undefined): string {
     .join(' ');
 }
 
+function goalTagsMatch(template: SplitTemplateRecord, goal: string): boolean {
+  const normalized = goal.toUpperCase();
+  const tags = template.goalTags.map((t) => t.toUpperCase());
+  if (tags.includes(normalized)) return true;
+  if (normalized === 'MUSCLE_GAIN' && (tags.includes('HYPERTROPHY') || tags.includes('RECOMPOSITION'))) {
+    return true;
+  }
+  if (normalized === 'HYPERTROPHY' && tags.includes('HYPERTROPHY')) return true;
+  return false;
+}
+
+const FEATURED_SLUGS = new Set(['upper-lower-4x', 'ppl-6x']);
+
 @Injectable()
 export class TemplatesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly include = {
-    splits: {
+    days: {
+      orderBy: { dayNumber: 'asc' as const },
       include: {
-        days: {
-          orderBy: { dayNumber: 'asc' as const },
+        exercises: {
+          orderBy: { orderIndex: 'asc' as const },
           include: {
-            exercises: {
-              orderBy: { orderIndex: 'asc' as const },
+            exercise: {
+              select: { id: true, name: true, primaryMuscle: true },
             },
           },
         },
@@ -124,27 +154,36 @@ export class TemplatesService {
     },
   } as const;
 
-  private async buildExerciseMap(template: WorkoutTemplateWithSplit) {
-    const ids = Array.from(
-      new Set(
-        template.splits.flatMap((split) =>
-          split.days.flatMap((day) => day.exercises.map((exercise) => exercise.exerciseId)),
-        ),
-      ),
-    );
-    if (ids.length === 0) return new Map<string, TemplateExerciseDto>();
-    const exercises = await this.prisma.exercise.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, name: true, primaryMuscle: true },
-    });
-    return new Map(exercises.map((exercise) => [exercise.id, exercise]));
+  private mapDay(day: SplitTemplateRecord['days'][number]): TemplateDayDto {
+    return {
+      id: day.id,
+      dayNumber: day.dayNumber,
+      label: day.label,
+      dayType: day.dayType,
+      exercises: day.exercises.map((exercise) => ({
+        id: exercise.id,
+        orderIndex: exercise.orderIndex,
+        setsTarget: exercise.setsTarget,
+        repRangeMin: exercise.repRangeMin,
+        repRangeMax: exercise.repRangeMax,
+        exerciseId: exercise.exerciseId,
+        exercise: exercise.exercise
+          ? {
+              id: exercise.exercise.id,
+              name: exercise.exercise.name,
+              primaryMuscle: exercise.exercise.primaryMuscle,
+            }
+          : null,
+      })),
+    };
   }
 
-  private buildListItem(template: WorkoutTemplateWithSplit): TemplateListItemDto {
-    const days = template.splits.flatMap((split) =>
-      split.days.map((day) => day.label),
-    );
-    const featured = template.name === 'Upper Lower' || template.name === 'Push Pull Legs';
+  private buildListItem(template: SplitTemplateRecord): TemplateListItemDto {
+    const days = template.days.map((day) => day.label);
+    const featured =
+      (template.slug && FEATURED_SLUGS.has(template.slug)) ||
+      template.name === 'Upper Lower 4x' ||
+      template.name === 'PPL 6x';
     const badge =
       template.daysPerWeek >= 6
         ? 'ADVANCED'
@@ -154,10 +193,10 @@ export class TemplatesService {
 
     return {
       id: template.id,
-      slug: template.slug,
+      slug: template.slug ?? template.id,
       name: template.name,
-      goal: titleCaseValue(template.goalTags[0] ?? 'MUSCLE_GAIN'),
-      level: titleCaseValue(template.experienceTags[0] ?? 'INTERMEDIATE'),
+      goal: titleCaseValue(template.goalTags[0] ?? template.goal),
+      level: titleCaseValue(template.experienceTags[0] ?? template.level),
       splitStyle: template.splitType,
       splitStyleLabel: splitStyleLabel(template.splitType),
       daysPerWeek: template.daysPerWeek,
@@ -174,49 +213,48 @@ export class TemplatesService {
         { label: 'Focus', value: titleCaseValue(template.primaryMuscle) },
         {
           label: 'Level',
-          value: titleCaseValue(template.experienceTags[0] ?? 'INTERMEDIATE'),
+          value: titleCaseValue(template.experienceTags[0] ?? template.level),
         },
       ],
     };
   }
 
-  private async buildDetail(template: WorkoutTemplateWithSplit): Promise<TemplateDetailDto> {
-    const exerciseById = await this.buildExerciseMap(template);
+  private buildDetail(template: SplitTemplateRecord): TemplateDetailDto {
     const list = this.buildListItem(template);
-    const dayCount = template.splits.reduce((sum, split) => sum + split.days.length, 0);
+    const workoutDayCount = template.days.filter((d) => d.dayType === 'WORKOUT').length;
 
     return {
       ...list,
       description: template.description ?? null,
       goalTags: template.goalTags,
       experienceTags: template.experienceTags,
-      splitConfigs: template.splits.map((split) => ({
-        id: split.id,
-        splitLabel: split.splitLabel,
-        days: split.days.map((day) => ({
-          dayNumber: day.dayNumber,
-          label: day.label,
-          exercises: day.exercises.map((exercise) => ({
-            orderIndex: exercise.orderIndex,
-            setsTarget: exercise.setsTarget,
-            repRangeMin: exercise.repRangeMin,
-            repRangeMax: exercise.repRangeMax,
-            exercise: exerciseById.get(exercise.exerciseId) ?? null,
-          })),
-        })),
-      })),
+      splitConfigs: [
+        {
+          id: template.id,
+          splitLabel: template.splitLabel,
+          days: template.days.map((day) => this.mapDay(day)),
+        },
+      ],
       programSummary: {
         mesocycleBlocks: 1,
-        workoutTemplates: dayCount,
+        workoutTemplates: workoutDayCount,
         totalWeeks: 8,
-        sessionCount: dayCount * 8,
+        sessionCount: workoutDayCount * 8,
       },
     };
   }
 
   async findAll(query: TemplatesQueryDto): Promise<TemplateListItemDto[]> {
-    const where: Record<string, unknown> = {};
-    if (query.goal) where['goalTags'] = { has: query.goal.toUpperCase() };
+    const where: Record<string, unknown> = { isSystem: true };
+    if (query.goal) {
+      const goal = query.goal.toUpperCase();
+      where['OR'] = [
+        { goalTags: { has: goal } },
+        ...(goal === 'MUSCLE_GAIN'
+          ? [{ goalTags: { has: 'HYPERTROPHY' } }, { goalTags: { has: 'RECOMPOSITION' } }]
+          : []),
+      ];
+    }
     if (query.level) where['experienceTags'] = { has: query.level.toUpperCase() };
     if (query.splitStyle) where['splitType'] = query.splitStyle.toUpperCase();
     if (query.daysPerWeekMin || query.daysPerWeekMax) {
@@ -226,11 +264,11 @@ export class TemplatesService {
     }
     if (query.search) where['name'] = { contains: query.search, mode: 'insensitive' };
 
-    const records = (await this.prisma.workoutTemplate.findMany({
+    const records = (await this.prisma.splitTemplate.findMany({
       where,
       include: this.include,
       orderBy: [{ daysPerWeek: 'asc' }, { name: 'asc' }],
-    })) as unknown as WorkoutTemplateWithSplit[];
+    })) as unknown as SplitTemplateRecord[];
 
     return records
       .map((record) => this.buildListItem(record))
@@ -238,10 +276,10 @@ export class TemplatesService {
   }
 
   async findOne(idOrSlug: string): Promise<TemplateDetailDto> {
-    const record = (await this.prisma.workoutTemplate.findFirst({
+    const record = (await this.prisma.splitTemplate.findFirst({
       where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
       include: this.include,
-    })) as unknown as WorkoutTemplateWithSplit | null;
+    })) as unknown as SplitTemplateRecord | null;
 
     if (!record) throw new NotFoundException(`Template "${idOrSlug}" not found`);
     return this.buildDetail(record);
@@ -261,20 +299,20 @@ export class TemplatesService {
   }
 
   async recommend(goal: string, level: string, daysAvailable: number) {
-    const records = (await this.prisma.workoutTemplate.findMany({
-      where: { daysPerWeek: { lte: daysAvailable } },
+    const records = (await this.prisma.splitTemplate.findMany({
+      where: { isSystem: true, daysPerWeek: { lte: daysAvailable } },
       include: this.include,
       orderBy: [{ daysPerWeek: 'desc' }, { name: 'asc' }],
-    })) as unknown as WorkoutTemplateWithSplit[];
+    })) as unknown as SplitTemplateRecord[];
 
     if (records.length === 0) throw new NotFoundException('No templates available');
 
-    const score = (template: WorkoutTemplateWithSplit) => {
+    const score = (template: SplitTemplateRecord) => {
       let points = 0;
-      if (template.goalTags.includes(goal)) points += 5;
-      if (template.experienceTags.includes(level)) points += 4;
+      if (goalTagsMatch(template, goal)) points += 5;
+      if (template.experienceTags.map((t) => t.toUpperCase()).includes(level)) points += 4;
       points -= Math.abs(template.daysPerWeek - daysAvailable);
-      if (template.name === 'Upper Lower') points += 1;
+      if (template.slug === 'upper-lower-4x') points += 1;
       return points;
     };
 
@@ -283,7 +321,7 @@ export class TemplatesService {
     const alternatives = sorted.slice(1, 4).map((template) => this.buildListItem(template));
 
     return {
-      recommended: await this.buildDetail(recommended),
+      recommended: this.buildDetail(recommended),
       alternatives,
       rationale: `Matched on goal=${goal}, level=${level}, daysAvailable=${daysAvailable}`,
       profile: {

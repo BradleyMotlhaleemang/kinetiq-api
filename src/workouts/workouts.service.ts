@@ -7,8 +7,8 @@ import {
   BIOFEEDBACK_PROMPT_DELAY_2H_MS,
   getMsUntilNextDay11am,
 } from '../workers/biofeedback-prompt.worker';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, SessionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressionEngineService } from '../progression-engine/progression-engine.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
@@ -60,6 +60,7 @@ export class WorkoutsService {
         userId,
         mesocycleId: mesocycleId ?? null,
         splitDayLabel: splitDayLabel ?? null,
+        sessionType: mesocycleId ? SessionType.MESOCYCLE : SessionType.STANDALONE,
         status: 'IN_PROGRESS',
         startedAt: new Date(),
         date: new Date(),
@@ -88,6 +89,51 @@ export class WorkoutsService {
     });
     if (!workout) throw new NotFoundException('Workout not found');
     return workout;
+  }
+
+  async getWorkoutExercises(userId: string, workoutId: string) {
+    await this.validateWorkoutOwnership(userId, workoutId);
+
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+      select: {
+        id: true,
+        sessionType: true,
+        splitDayLabel: true,
+      },
+    });
+    if (!workout) throw new NotFoundException('Workout not found');
+
+    const rows = await this.prisma.workoutExercise.findMany({
+      where: { workoutId },
+      include: {
+        exercise: {
+          select: {
+            name: true,
+            primaryMuscle: true,
+            movementClass: true,
+          },
+        },
+      },
+      orderBy: { orderIndex: 'asc' },
+    });
+
+    return {
+      workoutId: workout.id,
+      sessionType: workout.sessionType,
+      splitDayLabel: workout.splitDayLabel,
+      exercises: rows.map((row) => ({
+        id: row.id,
+        exerciseId: row.exerciseId,
+        name: row.exercise.name,
+        orderIndex: row.orderIndex,
+        setsTarget: row.setsTarget,
+        repRangeMin: row.repRangeMin,
+        repRangeMax: row.repRangeMax,
+        primaryMuscle: row.exercise.primaryMuscle,
+        movementClass: row.exercise.movementClass ?? 'UNKNOWN',
+      })),
+    };
   }
 
   private async validateWorkoutOwnership(
@@ -410,6 +456,11 @@ export class WorkoutsService {
   ) {
     await this.validateWorkoutOwnership(userId, workoutId);
 
+    const workout = await this.findOne(userId, workoutId);
+    if (workout.status === 'COMPLETED') {
+      throw new BadRequestException('Cannot add sets to a completed workout');
+    }
+
     const e1rm = weight * (1 + reps / 30);
     const effectiveReps = rpe && rpe >= 7 ? reps * ((rpe - 6) / 4) : reps * 0.5;
     const fatigueCost = weight * 0.01 * (rpe ? rpe / 10 : 0.7);
@@ -458,6 +509,10 @@ export class WorkoutsService {
 
  async complete(userId: string, workoutId: string) {
   const workout = await this.findOne(userId, workoutId);
+
+  if (workout.status === 'COMPLETED') {
+    return workout;
+  }
 
   const totalVolume = workout.sets.reduce(
     (sum, s) => sum + s.weight * s.reps, 0,
@@ -757,57 +812,39 @@ export class WorkoutsService {
     return jointComfortLog;
   }
 
-  private pickSetsTargetFromMesocycleTemplate(
-    template: {
+  private pickSetsTargetFromSplitTemplate(
+    splitTemplate: {
       days: Array<{
         dayNumber: number;
-        workoutTemplate: {
-          splits: Array<{
-            days: Array<{
-              exercises: Array<{ setsTarget: number }>;
-            }>;
-          }>;
-        } | null;
+        exercises: Array<{ setsTarget: number }>;
       }>;
     } | null,
     workoutDayNumber: number | null,
   ): number | null {
-    if (!template?.days?.length) return null;
+    if (!splitTemplate?.days?.length) return null;
 
     const collect = (
       days: Array<{
         dayNumber: number;
-        workoutTemplate: {
-          splits: Array<{
-            days: Array<{
-              exercises: Array<{ setsTarget: number }>;
-            }>;
-          }>;
-        } | null;
+        exercises: Array<{ setsTarget: number }>;
       }>,
     ) => {
-      for (const d of days) {
-        const wt = d.workoutTemplate;
-        if (!wt) continue;
-        for (const split of wt.splits) {
-          for (const sd of split.days) {
-            const hit = sd.exercises[0];
-            if (hit) return hit.setsTarget;
-          }
-        }
+      for (const day of days) {
+        const hit = day.exercises[0];
+        if (hit) return hit.setsTarget;
       }
       return null;
     };
 
     if (workoutDayNumber != null) {
-      const filtered = template.days.filter(
+      const filtered = splitTemplate.days.filter(
         (d) => d.dayNumber === workoutDayNumber,
       );
       const picked = collect(filtered);
       if (picked != null) return picked;
     }
 
-    return collect(template.days);
+    return collect(splitTemplate.days);
   }
 
   private async resolveMesocycleProgressionContext(
@@ -849,26 +886,14 @@ export class WorkoutsService {
       where: { id: mesocycleId, userId },
       select: {
         currentWeek: true,
-        template: {
+        splitTemplate: {
           select: {
             days: {
               select: {
                 dayNumber: true,
-                workoutTemplate: {
-                  select: {
-                    splits: {
-                      select: {
-                        days: {
-                          select: {
-                            exercises: {
-                              where: { exerciseId },
-                              select: { setsTarget: true },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
+                exercises: {
+                  where: { exerciseId },
+                  select: { setsTarget: true },
                 },
               },
             },
@@ -885,8 +910,8 @@ export class WorkoutsService {
       weekNumber = mesocycle.currentWeek;
     }
 
-    const picked = this.pickSetsTargetFromMesocycleTemplate(
-      mesocycle.template,
+    const picked = this.pickSetsTargetFromSplitTemplate(
+      mesocycle.splitTemplate,
       workoutDayNumber,
     );
     if (picked != null) {

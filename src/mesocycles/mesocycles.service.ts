@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SessionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { UsersService } from '../users/users.service';
@@ -121,13 +121,47 @@ export class MesocyclesService {
       ABS: { mev: 0, mrv: 16, current: 6 },
     };
 
+    let splitTemplateId: string;
+    let mesocycleTemplateId: string | null = null;
+
+    if (templateId) {
+      const split = await this.prisma.splitTemplate.findUnique({
+        where: { id: templateId },
+        select: { id: true },
+      });
+      if (split) {
+        splitTemplateId = split.id;
+      } else {
+        const mesoTemplate = await this.prisma.mesocycleTemplate.findUnique({
+          where: { id: templateId },
+          select: { id: true, splitTemplateId: true },
+        });
+        if (!mesoTemplate) {
+          throw new BadRequestException('templateId not found');
+        }
+        splitTemplateId = mesoTemplate.splitTemplateId;
+        mesocycleTemplateId = mesoTemplate.id;
+      }
+    } else {
+      const fallback = await this.prisma.splitTemplate.findFirst({
+        where: { isSystem: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (!fallback) {
+        throw new BadRequestException('No split template available');
+      }
+      splitTemplateId = fallback.id;
+    }
+
     return this.prisma.mesocycle.create({
       data: {
         userId,
         name,
         totalWeeks: totalWeeks ?? 8,
         volumeTargets,
-        templateId: templateId ?? null,
+        splitTemplateId,
+        mesocycleTemplateId,
         status: 'ACTIVE',
         currentWeek: 1,
       },
@@ -155,18 +189,20 @@ export class MesocyclesService {
         currentWeek: 1,
         status: 'ACTIVE',
         volumeTargets,
-        templateId: null,
+        splitTemplateId: tmpl.id,
       },
     });
 
     const orderedDays = tmpl.splitConfigs
       .flatMap((split) => split.days)
+      .filter((day) => day.dayType !== 'REST')
       .sort((a, b) => a.dayNumber - b.dayNumber);
     const workoutInserts: {
       userId: string;
       mesocycleId: string;
       splitDayLabel: string;
-      sessionType: string;
+      sessionType: SessionType;
+      splitDayId?: string;
       weekNumber: number;
       dayNumber: number;
       scheduledDate: Date;
@@ -177,6 +213,7 @@ export class MesocyclesService {
 
     for (let week = 1; week <= durationWeeks; week++) {
       for (const day of orderedDays) {
+        const splitDay = day as typeof day & { id?: string };
         const prescriptionSnapshot = {
           templateId: tmpl.id,
           templateSlug: tmpl.slug,
@@ -185,7 +222,7 @@ export class MesocyclesService {
           splitLabel: day.label,
           exercises: day.exercises.map((entry) => ({
             orderIndex: entry.orderIndex,
-            exerciseId: entry.exercise?.id ?? null,
+            exerciseId: (entry as typeof entry & { exerciseId?: string }).exerciseId ?? entry.exercise?.id ?? null,
             exerciseName: entry.exercise?.name ?? null,
             primaryMuscle: entry.exercise?.primaryMuscle ?? null,
             setsTarget: entry.setsTarget,
@@ -203,7 +240,8 @@ export class MesocyclesService {
           userId,
           mesocycleId: mesocycle.id,
           splitDayLabel: `W${week} D${day.dayNumber} - ${day.label}`,
-          sessionType: day.label,
+          sessionType: SessionType.MESOCYCLE,
+          splitDayId: splitDay.id,
           weekNumber: week,
           dayNumber: day.dayNumber,
           scheduledDate,
@@ -216,6 +254,70 @@ export class MesocyclesService {
 
     if (workoutInserts.length > 0) {
       await this.prisma.workout.createMany({ data: workoutInserts });
+
+      const created = await this.prisma.workout.findMany({
+        where: { mesocycleId: mesocycle.id },
+        select: { id: true, splitDayId: true, weekNumber: true, dayNumber: true },
+      });
+
+      const workoutBySplitDayAndWeek = new Map(
+        created
+          .filter(
+            (workout) =>
+              workout.splitDayId &&
+              workout.weekNumber !== null &&
+              workout.dayNumber !== null,
+          )
+          .map((workout) => [
+            `${workout.splitDayId}:${workout.weekNumber}:${workout.dayNumber}`,
+            workout.id,
+          ]),
+      );
+
+      const workoutExerciseInserts: Array<{
+        workoutId: string;
+        exerciseId: string;
+        orderIndex: number;
+        setsTarget: number;
+        repRangeMin: number;
+        repRangeMax: number;
+        sourceExerciseId?: string;
+      }> = [];
+
+      for (let week = 1; week <= durationWeeks; week++) {
+        for (const day of orderedDays) {
+          const splitDay = day as typeof day & { id?: string };
+          if (!splitDay.id) continue;
+
+          const workoutId = workoutBySplitDayAndWeek.get(
+            `${splitDay.id}:${week}:${day.dayNumber}`,
+          );
+          if (!workoutId) continue;
+
+          for (const entry of day.exercises) {
+            const exerciseId =
+              (entry as typeof entry & { exerciseId?: string }).exerciseId ??
+              entry.exercise?.id;
+            if (!exerciseId) continue;
+
+            workoutExerciseInserts.push({
+              workoutId,
+              exerciseId,
+              orderIndex: entry.orderIndex,
+              setsTarget: entry.setsTarget,
+              repRangeMin: entry.repRangeMin,
+              repRangeMax: entry.repRangeMax,
+              sourceExerciseId: (entry as typeof entry & { id?: string }).id,
+            });
+          }
+        }
+      }
+
+      if (workoutExerciseInserts.length > 0) {
+        await this.prisma.workoutExercise.createMany({
+          data: workoutExerciseInserts,
+        });
+      }
     }
 
     return this.prisma.mesocycle.findUnique({
@@ -299,16 +401,18 @@ export class MesocyclesService {
   }
 
   async getTemplates() {
-    return this.prisma.workoutTemplate.findMany({
+    return this.prisma.splitTemplate.findMany({
+      where: { isSystem: true },
       orderBy: [{ daysPerWeek: 'asc' }, { name: 'asc' }],
       include: {
-        splits: {
+        days: {
+          orderBy: { dayNumber: 'asc' },
           include: {
-            days: {
-              orderBy: { dayNumber: 'asc' },
+            exercises: {
+              orderBy: { orderIndex: 'asc' },
               include: {
-                exercises: {
-                  orderBy: { orderIndex: 'asc' },
+                exercise: {
+                  select: { id: true, name: true, primaryMuscle: true },
                 },
               },
             },

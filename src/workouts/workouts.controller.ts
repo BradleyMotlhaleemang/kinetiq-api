@@ -35,6 +35,11 @@ export class WorkoutsController {
     return transformWorkout(workout);
   }
 
+  @Get(':id/exercises')
+  getExercises(@Request() req: any, @Param('id') id: string) {
+    return this.workouts.getWorkoutExercises(req.user.userId, id);
+  }
+
   @Get(':id/prescription')
   async getPrescription(
     @Request() req: any,
