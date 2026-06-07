@@ -186,9 +186,28 @@ model User {
   restPreferences  RestPreference[]
   setRestLogs      SetRestLog[]
   passwordResetToken       String?
-passwordResetTokenExpiry DateTime?
-muscleGroupFeedback MuscleGroupFeedback[]
+  passwordResetTokenExpiry DateTime?
+  emailVerified              Boolean   @default(false)
+  emailVerificationToken     String?
+  emailVerificationTokenExpiry DateTime?
+  failedLoginAttempts        Int       @default(0)
+  lockedUntil                DateTime?
+  muscleGroupFeedback MuscleGroupFeedback[]
   splitTemplates      SplitTemplate[]
+}
+
+model AuthAuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  email     String?
+  event     String
+  reason    String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Exercise {

@@ -50,14 +50,27 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 ```
 
-Optional for password reset emails:
+Required for email verification and password reset (Gmail example):
 
 ```env
-SMTP_HOST=...
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=...
-SMTP_PASS=...
+SMTP_USER=your-test@gmail.com
+SMTP_PASS=<Gmail App Password — 16 chars from Google Account → Security → App passwords>
 ```
+
+### Auth audit log (admin)
+
+Query recent auth events without inspecting application code:
+
+```sql
+SELECT "createdAt", event, reason, email, "ipAddress"
+FROM "AuthAuditLog"
+ORDER BY "createdAt" DESC
+LIMIT 50;
+```
+
+Expected events: `REGISTRATION`, `VERIFICATION_SENT`, `VERIFICATION_COMPLETED`, `LOGIN_SUCCESS`, `LOGIN_FAILED`, `PASSWORD_RESET_REQUESTED`, `PASSWORD_RESET_COMPLETED`, `LOGOUT`, `ACCOUNT_LOCKED`.
 
 ### 4) Generate Prisma client and run DB migrations (manual)
 

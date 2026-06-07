@@ -1260,6 +1260,7 @@ for (const t of templateDefsToSeed) {
         experienceLevel: user.experienceLevel,
         trainingAgeMths: user.trainingAgeMths,
         onboardingCompletedAt: user.onboardingCompletedAt,
+        emailVerified: true,
       },
       create: {
         email: user.email,
@@ -1269,6 +1270,7 @@ for (const t of templateDefsToSeed) {
         experienceLevel: user.experienceLevel,
         trainingAgeMths: user.trainingAgeMths,
         onboardingCompletedAt: user.onboardingCompletedAt,
+        emailVerified: true,
       },
     })
   }

@@ -100,6 +100,7 @@ export class WorkoutsService {
         id: true,
         sessionType: true,
         splitDayLabel: true,
+        prescriptionSnapshot: true,
       },
     });
     if (!workout) throw new NotFoundException('Workout not found');
@@ -118,21 +119,89 @@ export class WorkoutsService {
       orderBy: { orderIndex: 'asc' },
     });
 
+    if (rows.length > 0) {
+      return {
+        workoutId: workout.id,
+        sessionType: workout.sessionType,
+        splitDayLabel: workout.splitDayLabel,
+        exercises: rows.map((row) => ({
+          id: row.id,
+          exerciseId: row.exerciseId,
+          name: row.exercise.name,
+          orderIndex: row.orderIndex,
+          setsTarget: row.setsTarget,
+          repRangeMin: row.repRangeMin,
+          repRangeMax: row.repRangeMax,
+          primaryMuscle: row.exercise.primaryMuscle,
+          movementClass: row.exercise.movementClass ?? 'UNKNOWN',
+        })),
+      };
+    }
+
+    const snapshot = workout.prescriptionSnapshot as {
+      exercises?: Array<{
+        orderIndex?: number;
+        exerciseId?: string | null;
+        exerciseName?: string | null;
+        primaryMuscle?: string | null;
+        setsTarget?: number;
+        repRangeMin?: number;
+        repRangeMax?: number;
+      }>;
+    } | null;
+
+    const snapshotEntries = Array.isArray(snapshot?.exercises) ? snapshot.exercises : [];
+    if (snapshotEntries.length === 0) {
+      return {
+        workoutId: workout.id,
+        sessionType: workout.sessionType,
+        splitDayLabel: workout.splitDayLabel,
+        exercises: [],
+      };
+    }
+
+    const exerciseIds = snapshotEntries
+      .map((entry) => entry.exerciseId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    const exercisesFromDb = exerciseIds.length > 0
+      ? await this.prisma.exercise.findMany({
+          where: { id: { in: exerciseIds } },
+          select: {
+            id: true,
+            name: true,
+            primaryMuscle: true,
+            movementClass: true,
+          },
+        })
+      : [];
+
+    const exerciseById = new Map(exercisesFromDb.map((exercise) => [exercise.id, exercise]));
+
+    const exercises = snapshotEntries
+      .filter((entry) => entry.exerciseId)
+      .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+      .map((entry, index) => {
+        const exerciseId = entry.exerciseId!;
+        const meta = exerciseById.get(exerciseId);
+        return {
+          id: `${workoutId}-${exerciseId}`,
+          exerciseId,
+          name: meta?.name ?? entry.exerciseName ?? 'Exercise',
+          orderIndex: entry.orderIndex ?? index + 1,
+          setsTarget: entry.setsTarget ?? 3,
+          repRangeMin: entry.repRangeMin ?? 8,
+          repRangeMax: entry.repRangeMax ?? 12,
+          primaryMuscle: meta?.primaryMuscle ?? entry.primaryMuscle ?? null,
+          movementClass: meta?.movementClass ?? 'UNKNOWN',
+        };
+      });
+
     return {
       workoutId: workout.id,
       sessionType: workout.sessionType,
       splitDayLabel: workout.splitDayLabel,
-      exercises: rows.map((row) => ({
-        id: row.id,
-        exerciseId: row.exerciseId,
-        name: row.exercise.name,
-        orderIndex: row.orderIndex,
-        setsTarget: row.setsTarget,
-        repRangeMin: row.repRangeMin,
-        repRangeMax: row.repRangeMax,
-        primaryMuscle: row.exercise.primaryMuscle,
-        movementClass: row.exercise.movementClass ?? 'UNKNOWN',
-      })),
+      exercises,
     };
   }
 

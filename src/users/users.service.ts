@@ -54,12 +54,12 @@ export class UsersService {
   async create(email: string, password: string, displayName: string) {
     const passwordHash = await bcrypt.hash(password, 10);
     return this.prisma.user.create({
-      data: { email, passwordHash, displayName },
+      data: { email: email.toLowerCase(), passwordHash, displayName, emailVerified: false },
     });
   }
 
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({ where: { email } });
+    return this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   }
 
   async findById(id: string) {
@@ -220,8 +220,71 @@ async updatePasswordAndClearToken(userId: string, passwordHash: string) {
       passwordHash,
       passwordResetToken: null,
       passwordResetTokenExpiry: null,
+      refreshTokenHash: null,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
     },
   });
 }
-  
+
+  async setVerificationToken(userId: string, token: string, expiry: Date) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerificationToken: token,
+        emailVerificationTokenExpiry: expiry,
+      },
+    });
+  }
+
+  async findByVerificationToken(hashedToken: string) {
+    return this.prisma.user.findFirst({
+      where: { emailVerificationToken: hashedToken },
+    });
+  }
+
+  async markEmailVerified(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationTokenExpiry: null,
+      },
+    });
+  }
+
+  async setRefreshTokenHash(userId: string, hash: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: hash },
+    });
+  }
+
+  async clearRefreshTokenHash(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    });
+  }
+
+  async recordFailedLogin(userId: string, attempts: number, lockedUntil: Date | null) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedLoginAttempts: attempts,
+        lockedUntil,
+      },
+    });
+  }
+
+  async resetFailedLogin(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+  }
 }
