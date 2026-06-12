@@ -1,0 +1,141 @@
+# Kinetiq — Infrastructure Architecture Diagram
+# Tool: D2 (https://d2lang.com · https://play.d2lang.com)
+# Usage: d2 docs/diagrams/kinetiq-infrastructure.d2 docs/diagrams/kinetiq-infrastructure.svg
+#    or paste into https://play.d2lang.com
+
+direction: down
+
+users: Users (~10 testers) {
+  style.fill: "#e8f4fc"
+  browser: Mobile / Desktop Browser {
+    shape: person
+    label: "Botswana\n~150–250 ms RTT → EU"
+  }
+}
+
+dns: DNS {
+  style.fill: "#fce4ec"
+  app: app.yourdomain.com
+  api: api.yourdomain.com
+}
+
+github: GitHub {
+  style.fill: "#f3e5f5"
+  repo: Kinetiq monorepo {
+    label: "kinetiq-api · kinetiq-app"
+  }
+  actions: GitHub Actions CI {
+    label: "lint · test · build"
+  }
+  ghcr: ghcr.io {
+    label: "pre-built images\n(optional)"
+    style.stroke-dash: 3
+  }
+}
+
+hetzner: "Hetzner Cloud CX23\nEU · fsn1 / nbg1 / hel1" {
+  style.fill: "#f0f4e8"
+
+  firewall: Cloud Firewall {
+    label: "inbound: 22 · 80 · 443\nPostgres & Redis not public"
+  }
+
+  coolify: Coolify {
+    proxy: Reverse Proxy {
+      label: "Traefik / Caddy"
+    }
+    tls: "Let's Encrypt TLS"
+    deploy: Deploy orchestration {
+      label: "webhook · main branch"
+    }
+  }
+
+  compose: Docker Compose {
+    style.fill: "#e8eaf6"
+
+    app: kinetiq-app {
+      shape: rectangle
+      label: "Next.js 16\nport 3001"
+    }
+
+    api: kinetiq-api {
+      shape: rectangle
+      label: "NestJS 11\nport 3000 · /api/v1\n24/7 long-running"
+    }
+
+    postgres: PostgreSQL 16 {
+      shape: cylinder
+      label: "port 5432\npersistent volume"
+    }
+
+    redis: Redis 7 {
+      shape: cylinder
+      label: "port 6379\nBull + rate limits"
+    }
+
+    workers: Background jobs (in API process) {
+      style.fill: "#fff8e1"
+      cron: MesocycleAdvanceWorker {
+        label: "@Cron EVERY_DAY_AT_MIDNIGHT\nadvance mesocycle weeks"
+      }
+      bull: Bull workers {
+        label: "e1rm-rollup\nsfl-daily-update\nsfr-calculation\nbiofeedback-prompt"
+      }
+    }
+  }
+}
+
+smtp: SMTP {
+  style.fill: "#fce4ec"
+  mail: Gmail / transactional {
+    label: "verify email · password reset"
+  }
+}
+
+# --- Traffic ---
+users.browser -> dns.app
+users.browser -> dns.api
+dns.app -> hetzner.firewall
+dns.api -> hetzner.firewall
+hetzner.firewall -> hetzner.coolify.proxy
+hetzner.coolify.proxy -> hetzner.coolify.tls
+hetzner.coolify.tls -> hetzner.compose.app: "HTTPS app.*" {
+  style.stroke: "#1a73e8"
+}
+hetzner.coolify.tls -> hetzner.compose.api: "HTTPS api.*" {
+  style.stroke: "#1a73e8"
+}
+
+# Browser API calls (cross-subdomain auth)
+hetzner.compose.app -> hetzner.compose.api: "fetch api.*\nJWT + refresh cookie" {
+  style.stroke-dash: 5
+  style.stroke: "#7b1fa2"
+}
+
+# Internal data
+hetzner.compose.api -> hetzner.compose.postgres: "Prisma 7" {
+  style.stroke: "#e65100"
+}
+hetzner.compose.api -> hetzner.compose.redis: "ioredis / Bull" {
+  style.stroke: "#e65100"
+}
+hetzner.compose.workers.bull -> hetzner.compose.redis
+
+# CI/CD
+github.repo -> github.actions
+github.actions -> hetzner.coolify.deploy: "CI pass on main" {
+  style.stroke: "#7b1fa2"
+}
+github.actions -> github.ghcr: "optional push" {
+  style.stroke-dash: 3
+}
+github.ghcr -> hetzner.coolify.deploy: "pull image" {
+  style.stroke-dash: 3
+}
+hetzner.coolify.deploy -> hetzner.compose
+
+# Email
+hetzner.compose.api -> smtp.mail
+smtp.mail -> users.browser: "links → FRONTEND_URL" {
+  style.stroke-dash: 5
+}

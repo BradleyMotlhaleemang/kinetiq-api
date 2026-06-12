@@ -1,7 +1,13 @@
 import { Module } from '@nestjs/common';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
+import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage';
+import { RedisModule } from './common/redis/redis.module';
+import { REDIS_CLIENT } from './common/redis/redis.constants';
+import type Redis from 'ioredis';
 import { BullModule } from '@nestjs/bull';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
@@ -26,11 +32,29 @@ import { CardioModule } from './cardio/cardio.module';
 import { NutritionModule } from './nutrition/nutrition.module';
 import { TimerModule } from './timer/timer.module';
 import { TemplatesModule } from './templates/templates.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    RedisModule,
+    ThrottlerModule.forRootAsync({
+      inject: [REDIS_CLIENT],
+      useFactory: (redis: Redis | null) => {
+        const ttl = process.env.THROTTLE_TTL_MS
+          ? Number(process.env.THROTTLE_TTL_MS)
+          : 60_000;
+        const limit = process.env.THROTTLE_LIMIT
+          ? Number(process.env.THROTTLE_LIMIT)
+          : 100;
+
+        return {
+          throttlers: [{ ttl, limit }],
+          ...(redis ? { storage: new RedisThrottlerStorage(redis) } : {}),
+        };
+      },
+    }),
     ScheduleModule.forRoot(),
     BullModule.forRoot({
       redis: {
@@ -64,11 +88,12 @@ import { TemplatesModule } from './templates/templates.module';
     NutritionModule,
     TimerModule,
     TemplatesModule,
+    AdminModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: UserThrottlerGuard,
     },
   ],
 })

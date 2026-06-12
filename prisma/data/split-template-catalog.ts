@@ -1,5 +1,5 @@
 export type ExperienceLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
-export type TrainingGoal = 'HYPERTROPHY' | 'STRENGTH' | 'RECOMPOSITION'
+export type TrainingGoal = 'HYPERTROPHY' | 'STRENGTH' | 'RECOMPOSITION' | 'POWERBUILDING'
 
 export type WorkoutExerciseTemplate = {
   name: string
@@ -7,6 +7,7 @@ export type WorkoutExerciseTemplate = {
   setsTarget: number
   repRangeMin: number
   repRangeMax: number
+  rpeTarget?: number
 }
 
 export type WorkoutDayTemplate = {
@@ -242,7 +243,7 @@ const upperLower5x: SplitTemplate = {
   level: 'INTERMEDIATE',
   experienceTags: ['INTERMEDIATE', 'ADVANCED'],
   goal: 'STRENGTH',
-  goalTags: ['STRENGTH', 'HYPERTROPHY'],
+  goalTags: ['STRENGTH', 'HYPERTROPHY', 'POWERBUILDING'],
   description:
     'Five-day upper/lower split combining dedicated strength days with hypertrophy volume days and an accessories finisher. Bridges strength and size programming.',
   dayStructure: ['Upper Strength', 'Lower Strength', 'Rest', 'Upper Hypertrophy', 'Lower Hypertrophy', 'Accessories', 'Rest'],
@@ -642,7 +643,7 @@ const strength4x: SplitTemplate = {
   level: 'INTERMEDIATE',
   experienceTags: ['INTERMEDIATE', 'ADVANCED'],
   goal: 'STRENGTH',
-  goalTags: ['STRENGTH'],
+  goalTags: ['STRENGTH', 'POWERBUILDING'],
   description:
     'Four-day upper/lower split with dedicated strength days followed by volume days. Primary goal is progressive overload on the big lifts; volume days reinforce hypertrophy and movement quality.',
   dayStructure: ['Upper Strength', 'Lower Strength', 'Rest', 'Upper Volume', 'Lower Volume', 'Rest', 'Rest'],

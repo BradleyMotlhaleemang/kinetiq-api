@@ -12,16 +12,24 @@ export class MesocycleAdvanceWorker {
       where: { status: 'ACTIVE' },
     });
 
+    if (activeMesocycles.length === 0) return;
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const sessionCounts = await this.prisma.workout.groupBy({
+      by: ['mesocycleId'],
+      where: {
+        mesocycleId: { in: activeMesocycles.map((m) => m.id) },
+        status: 'COMPLETED',
+        completedAt: { gte: sevenDaysAgo },
+      },
+      _count: { id: true },
+    });
+    const sessionsByMesocycle = new Map(
+      sessionCounts.map((row) => [row.mesocycleId, row._count.id]),
+    );
+
     for (const mesocycle of activeMesocycles) {
-      const sessionsThisWeek = await this.prisma.workout.count({
-        where: {
-          mesocycleId: mesocycle.id,
-          status: 'COMPLETED',
-          completedAt: {
-            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          },
-        },
-      });
+      const sessionsThisWeek = sessionsByMesocycle.get(mesocycle.id) ?? 0;
 
       if (sessionsThisWeek >= 2) {
         const nextWeek = mesocycle.currentWeek + 1;

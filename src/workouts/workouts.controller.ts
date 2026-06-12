@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { WorkoutsService } from './workouts.service';
 import { transformWorkout, transformPrescription } from '../common/transforms';
 
@@ -29,6 +30,21 @@ export class WorkoutsController {
     return workouts.map(transformWorkout);
   }
 
+  @Get('completion-advisory')
+  async completionAdvisory(
+    @Request() req: any,
+    @Query('excludeWorkoutId') excludeWorkoutId?: string,
+    @Query('completedAfter') completedAfter?: string,
+    @Query('completedBefore') completedBefore?: string,
+  ) {
+    return this.workouts.getCompletionAdvisory(
+      req.user.userId,
+      excludeWorkoutId,
+      completedAfter,
+      completedBefore,
+    );
+  }
+
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const workout = await this.workouts.findOne(req.user.userId, id);
@@ -40,6 +56,29 @@ export class WorkoutsController {
     return this.workouts.getWorkoutExercises(req.user.userId, id);
   }
 
+  @Post(':id/exercises')
+  addExercise(
+    @Request() req: any,
+    @Param('id') workoutId: string,
+    @Body() body: { exerciseId: string },
+  ) {
+    return this.workouts.addWorkoutExercise(req.user.userId, workoutId, body.exerciseId);
+  }
+
+  @Delete(':id/exercises/:workoutExerciseId')
+  removeExercise(
+    @Request() req: any,
+    @Param('id') workoutId: string,
+    @Param('workoutExerciseId') workoutExerciseId: string,
+  ) {
+    return this.workouts.removeWorkoutExercise(
+      req.user.userId,
+      workoutId,
+      workoutExerciseId,
+    );
+  }
+
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   @Get(':id/prescription')
   async getPrescription(
     @Request() req: any,
@@ -48,6 +87,24 @@ export class WorkoutsController {
   ) {
     const prescription = await this.workouts.getPrescription(req.user.userId, workoutId, exerciseId);
     return transformPrescription(prescription);
+  }
+
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @Get(':id/exercises/:exerciseId/load-advisory')
+  getLoadAdvisory(
+    @Request() req: any,
+    @Param('id') workoutId: string,
+    @Param('exerciseId') exerciseId: string,
+    @Query('weight') weight: string,
+    @Query('reps') reps: string,
+  ) {
+    return this.workouts.getLoadAdvisory(
+      req.user.userId,
+      workoutId,
+      exerciseId,
+      parseFloat(weight),
+      parseInt(reps, 10),
+    );
   }
 
   @Post(':id/sets')
@@ -90,6 +147,7 @@ export class WorkoutsController {
     );
   }
 
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   @Patch(':id/complete')
   async complete(@Request() req: any, @Param('id') id: string) {
     const workout = await this.workouts.complete(req.user.userId, id);

@@ -118,6 +118,35 @@ describe('TemplatesService', () => {
         }),
       );
     });
+
+    it('applies splitStyle filter for Full Body chip', async () => {
+      mockPrisma.splitTemplate.findMany.mockResolvedValue([]);
+      await service.findAll({ splitStyle: 'FULL_BODY' });
+
+      expect(mockPrisma.splitTemplate.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            splitType: 'FULL_BODY',
+          }),
+        }),
+      );
+    });
+
+    it('applies POWERBUILDING goal filter with STRENGTH fallback', async () => {
+      mockPrisma.splitTemplate.findMany.mockResolvedValue([]);
+      await service.findAll({ goal: 'POWERBUILDING' });
+
+      expect(mockPrisma.splitTemplate.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { goalTags: { has: 'POWERBUILDING' } },
+              { goalTags: { has: 'STRENGTH' } },
+            ]),
+          }),
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {

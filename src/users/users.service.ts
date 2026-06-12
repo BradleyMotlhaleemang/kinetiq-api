@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import {
@@ -47,6 +47,11 @@ function getRecommendationBand(score: number) {
   return 'ADVANCED_HIGH';
 }
 
+function trainingAgeFromFirstAnswer(answer: number): number {
+  const map = [3, 12, 24, 48];
+  return map[Math.min(Math.max(answer, 0), 3)] ?? 12;
+}
+
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
@@ -69,6 +74,7 @@ export class UsersService {
         id: true,
         email: true,
         displayName: true,
+        role: true,
         experienceLevel: true,
         trainingAgeMths: true,
         bodyweightKg: true,
@@ -87,21 +93,38 @@ export class UsersService {
     });
   }
 
+  async updateProfile(userId: string, data: { displayName?: string }) {
+    if (!data.displayName?.trim()) {
+      throw new BadRequestException('displayName is required');
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { displayName: data.displayName.trim() },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        experienceLevel: true,
+        onboardingCompletedAt: true,
+      },
+    });
+  }
+
   async updateOnboarding(userId: string, data: {
     gender?: string;
     dateOfBirth?: string;
     bodyweightKg?: number;
     goalMode?: string;
-    experienceLevel?: string;
-    trainingAgeMths?: number;
+    daysPerWeek?: number;
     notificationsEnabled?: boolean;
     preferredTrainingTime?: string;
   }) {
+    const { dateOfBirth, ...rest } = data;
     return this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...data,
-        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
+        ...rest,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         onboardingCompletedAt: new Date(),
       },
       select: {
@@ -138,6 +161,8 @@ export class UsersService {
 
     const totalScore = payload.answers.reduce((sum, value) => sum + value, 0);
     const recommendedLevel = getRecommendedLevel(totalScore);
+    const selectedLevel = payload.selectedLevel ?? recommendedLevel;
+    const trainingAgeMths = trainingAgeFromFirstAnswer(payload.answers[0] ?? 0);
     const scoredDomains = Object.entries(domainScores)
       .map(([domain, score]) => ({ domain: domain as DomainKey, score }))
       .sort((a, b) => b.score - a.score);
@@ -145,7 +170,7 @@ export class UsersService {
     const strongestDomains = scoredDomains.slice(0, 2).map((entry) => entry.domain);
     const weakestDomain = scoredDomains.at(-1)?.domain ?? 'trainingConsistency';
 
-    const selectedRank = EXPERIENCE_LEVEL_VALUES.indexOf(payload.selectedLevel);
+    const selectedRank = EXPERIENCE_LEVEL_VALUES.indexOf(selectedLevel);
     const recommendedRank = EXPERIENCE_LEVEL_VALUES.indexOf(recommendedLevel);
 
     let overrideDirection: 'UP' | 'DOWN' | 'NONE' = 'NONE';
@@ -155,9 +180,11 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        experienceLevel: payload.selectedLevel,
+        experienceLevel: selectedLevel,
         recommendedLevel,
         classificationScore: totalScore,
+        classificationAnswers: payload.answers,
+        trainingAgeMths,
         levelOverrideAcknowledged:
           overrideDirection === 'NONE'
             ? false
@@ -190,7 +217,7 @@ export class UsersService {
         totalScore,
         recommendedLevel,
         recommendationBand: getRecommendationBand(totalScore),
-        selectedLevel: payload.selectedLevel,
+        selectedLevel,
         overrideDirection,
         domainScores,
         weightedDomainScores,
@@ -274,6 +301,7 @@ async updatePasswordAndClearToken(userId: string, passwordHash: string) {
       data: {
         failedLoginAttempts: attempts,
         lockedUntil,
+        ...(lockedUntil ? { accountStatus: 'LOCKED' as const } : {}),
       },
     });
   }
@@ -284,7 +312,22 @@ async updatePasswordAndClearToken(userId: string, passwordHash: string) {
       data: {
         failedLoginAttempts: 0,
         lockedUntil: null,
+        accountStatus: 'ACTIVE',
       },
+    });
+  }
+
+  async updateLastLogin(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
+  }
+
+  async touchLastActive(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { lastActiveAt: new Date() },
     });
   }
 }

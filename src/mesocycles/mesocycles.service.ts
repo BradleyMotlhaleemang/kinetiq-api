@@ -7,6 +7,8 @@ import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { UsersService } from '../users/users.service';
 import { TemplatesService } from '../templates/templates.service';
 import { SFR_QUEUE } from '../workers/sfr.worker';
+import { deriveDayLabel, deriveMuscleSummary } from './expand-day.utils';
+import { toVolumeKey } from '../common/volume-key.util';
 
 export class GenerateMesocycleDto {
   templateId!: string;
@@ -42,41 +44,72 @@ function applyMusclePriority(
   }
 }
 
-function toVolumeKey(value: string) {
-  const normalized = value.toUpperCase();
-  if (normalized.includes('DELT') || normalized.includes('SHOULDER')) return 'SHOULDERS';
-  if (normalized.includes('HAMSTRING')) return 'HAMSTRINGS';
-  if (normalized.includes('GLUTE')) return 'GLUTES';
-  if (normalized.includes('QUAD')) return 'QUADS';
-  if (normalized.includes('TRICEP')) return 'TRICEPS';
-  if (normalized.includes('BICEP')) return 'BICEPS';
-  if (normalized.includes('CALF')) return 'CALVES';
-  if (normalized.includes('AB')) return 'ABS';
-  if (normalized.includes('CHEST')) return 'CHEST';
-  if (normalized.includes('BACK') || normalized.includes('LATS')) return 'BACK';
-  return normalized;
+type VolumeTargetEntry = { mev: number; mrv: number; prescribed: number; current?: number };
+
+function normalizeVolumeTargets(
+  raw: Prisma.JsonValue | null | undefined,
+): Record<string, VolumeTargetEntry> {
+  if (!raw || typeof raw !== 'object') return {};
+  const input = raw as Record<string, { mev?: number; mrv?: number; prescribed?: number; current?: number }>;
+  const result: Record<string, VolumeTargetEntry> = {};
+  for (const [muscle, entry] of Object.entries(input)) {
+    const prescribed = entry.prescribed ?? entry.current ?? 0;
+    result[muscle] = {
+      mev: entry.mev ?? 0,
+      mrv: entry.mrv ?? 0,
+      prescribed,
+      current: entry.current,
+    };
+  }
+  return result;
 }
 
 function buildVolumeTargets(
-  primaryMuscles: string[],
+  templateSetsByMuscle: Record<string, number>,
   musclePriorities?: Record<string, 'EMPHASIZE' | 'GROW' | 'MAINTAIN'>,
-): Record<string, { mev: number; mrv: number; current: number }> {
-  const normalizedPrimary = primaryMuscles.map(toVolumeKey);
-  const result: Record<string, { mev: number; mrv: number; current: number }> = {};
+): Record<string, VolumeTargetEntry> {
+  const result: Record<string, VolumeTargetEntry> = {};
 
   for (const [muscle, defaults] of Object.entries(MUSCLE_VOLUME_DEFAULTS)) {
     const priority = musclePriorities?.[muscle] ?? musclePriorities?.[muscle.toLowerCase()] ?? 'GROW';
-    const isPrimary = normalizedPrimary.some((p) => p.includes(muscle));
-    const effectivePriority: 'EMPHASIZE' | 'GROW' | 'MAINTAIN' =
-      isPrimary && priority === 'GROW' ? 'GROW' : priority;
+    const templateSets = templateSetsByMuscle[muscle] ?? 0;
+    const priorityTarget = applyMusclePriority(defaults.mev, defaults.mrv, priority);
+    const prescribed = templateSets > 0 ? templateSets : priorityTarget;
 
     result[muscle] = {
       mev: defaults.mev,
       mrv: defaults.mrv,
-      current: applyMusclePriority(defaults.mev, defaults.mrv, effectivePriority),
+      prescribed,
     };
   }
   return result;
+}
+
+async function sumTemplateSetsByMuscle(
+  prisma: Pick<PrismaService, 'splitTemplate'>,
+  templateId: string,
+): Promise<Record<string, number>> {
+  const template = await prisma.splitTemplate.findUnique({
+    where: { id: templateId },
+    include: {
+      days: {
+        include: {
+          exercises: {
+            include: { exercise: { select: { primaryMuscle: true } } },
+          },
+        },
+      },
+    },
+  });
+  const totals: Record<string, number> = {};
+  for (const day of template?.days ?? []) {
+    if (day.dayType !== 'WORKOUT') continue;
+    for (const slot of day.exercises) {
+      const key = toVolumeKey(slot.exercise.primaryMuscle);
+      totals[key] = (totals[key] ?? 0) + slot.setsTarget;
+    }
+  }
+  return totals;
 }
 
 @Injectable()
@@ -169,6 +202,14 @@ export class MesocyclesService {
   }
 
   private async generateFromTemplate(userId: string, dto: GenerateMesocycleDto) {
+    const validation = await this.templates.validateTemplate(userId, dto.templateId);
+    if (!validation.valid) {
+      throw new BadRequestException({
+        message: 'Template is incomplete and cannot be used to generate a block',
+        errors: validation.errors,
+      });
+    }
+
     const tmpl = await this.templates.expand(dto.templateId);
 
     const durationWeeks = dto.overrideDurationWeeks ?? 8;
@@ -177,8 +218,8 @@ export class MesocyclesService {
       throw new BadRequestException('durationWeeks must be between 1 and 16');
     }
 
-    const primaryMuscles = [tmpl.primaryFocus];
-    const volumeTargets = buildVolumeTargets(primaryMuscles, dto.musclePriorities);
+    const templateSetsByMuscle = await sumTemplateSetsByMuscle(this.prisma, tmpl.id);
+    const volumeTargets = buildVolumeTargets(templateSetsByMuscle, dto.musclePriorities);
 
     const mesocycle = await this.prisma.mesocycle.create({
       data: {
@@ -228,6 +269,7 @@ export class MesocyclesService {
             setsTarget: entry.setsTarget,
             repRangeMin: entry.repRangeMin,
             repRangeMax: entry.repRangeMax,
+            rpeTarget: entry.rpeTarget,
           })),
         } as Prisma.InputJsonValue;
 
@@ -386,18 +428,153 @@ export class MesocyclesService {
       where: { id },
       data: { status: 'COMPLETED' },
     });
-    await this.sfrQueue.add('calculate', { userId, mesocycleId: id });
+    await this.sfrQueue.add('calculate', { userId, mesocycleId: id }, {
+      removeOnComplete: 100,
+      removeOnFail: 50,
+      jobId: `sfr:${id}`,
+    });
     return mesocycle;
   }
 
   async getVolumeStatus(userId: string, id: string) {
     const mesocycle = await this.findOne(userId, id);
     if (!mesocycle) throw new NotFoundException('Mesocycle not found');
+
+    const volumeTargets = normalizeVolumeTargets(mesocycle.volumeTargets as Prisma.JsonValue);
+    const sets = await this.prisma.set.findMany({
+      where: {
+        workout: { mesocycleId: id, userId, status: 'COMPLETED' },
+      },
+      select: {
+        exercise: { select: { primaryMuscle: true } },
+        workout: { select: { weekNumber: true } },
+      },
+    });
+
+    const blockTotal: Record<string, number> = {};
+    const thisWeek: Record<string, number> = {};
+    for (const row of sets) {
+      const key = toVolumeKey(row.exercise.primaryMuscle);
+      blockTotal[key] = (blockTotal[key] ?? 0) + 1;
+      if ((row.workout.weekNumber ?? 1) === mesocycle.currentWeek) {
+        thisWeek[key] = (thisWeek[key] ?? 0) + 1;
+      }
+    }
+
+    const volumeActual: Record<string, { thisWeek: number; blockTotal: number }> = {};
+    for (const muscle of new Set([...Object.keys(volumeTargets), ...Object.keys(blockTotal)])) {
+      volumeActual[muscle] = {
+        thisWeek: thisWeek[muscle] ?? 0,
+        blockTotal: blockTotal[muscle] ?? 0,
+      };
+    }
+
     return {
       currentWeek: mesocycle.currentWeek,
       totalWeeks: mesocycle.totalWeeks,
-      volumeTargets: mesocycle.volumeTargets,
+      volumeTargets,
+      volumeActual,
     };
+  }
+
+  async regenerateFromTemplate(userId: string, mesocycleId: string, splitTemplateId: string) {
+    const meso = await this.prisma.mesocycle.findFirst({
+      where: { id: mesocycleId, userId, status: 'ACTIVE' },
+    });
+    if (!meso) throw new NotFoundException('Active mesocycle not found');
+
+    const ownedTemplate = await this.prisma.splitTemplate.findFirst({
+      where: { id: splitTemplateId, userId, isSystem: false },
+    });
+    if (!ownedTemplate) {
+      throw new BadRequestException('Regenerate requires an owned custom template');
+    }
+
+    const validation = await this.templates.validateTemplate(userId, splitTemplateId);
+    if (!validation.valid) {
+      throw new BadRequestException({ message: 'Template is invalid', errors: validation.errors });
+    }
+
+    await this.prisma.workout.deleteMany({
+      where: {
+        mesocycleId,
+        userId,
+        status: { in: ['PLANNED', 'IN_PROGRESS'] },
+        weekNumber: { gte: meso.currentWeek },
+      },
+    });
+
+    const tmpl = await this.templates.expand(splitTemplateId);
+    const templateSetsByMuscle = await sumTemplateSetsByMuscle(this.prisma, splitTemplateId);
+    const volumeTargets = buildVolumeTargets(templateSetsByMuscle);
+
+    await this.prisma.mesocycle.update({
+      where: { id: mesocycleId },
+      data: { splitTemplateId, volumeTargets },
+    });
+
+    const orderedDays = tmpl.splitConfigs
+      .flatMap((split) => split.days)
+      .filter((day) => day.dayType !== 'REST')
+      .sort((a, b) => a.dayNumber - b.dayNumber);
+
+    const workoutInserts: {
+      userId: string;
+      mesocycleId: string;
+      splitDayLabel: string;
+      sessionType: SessionType;
+      weekNumber: number;
+      dayNumber: number;
+      scheduledDate: Date;
+      date: Date;
+      status: 'PLANNED';
+      prescriptionSnapshot: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
+    }[] = [];
+    for (let week = meso.currentWeek; week <= meso.totalWeeks; week++) {
+      for (const day of orderedDays) {
+        const prescriptionSnapshot = {
+          templateId: tmpl.id,
+          templateSlug: tmpl.slug,
+          templateName: tmpl.name,
+          splitType: tmpl.splitStyle,
+          splitLabel: day.label,
+          exercises: day.exercises.map((entry) => ({
+            orderIndex: entry.orderIndex,
+            exerciseId: entry.exerciseId ?? entry.exercise?.id ?? null,
+            exerciseName: entry.exercise?.name ?? null,
+            primaryMuscle: entry.exercise?.primaryMuscle ?? null,
+            setsTarget: entry.setsTarget,
+            repRangeMin: entry.repRangeMin,
+            repRangeMax: entry.repRangeMax,
+            rpeTarget: entry.rpeTarget,
+          })),
+        } as Prisma.InputJsonValue;
+
+        const scheduledDate = new Date(
+          meso.startDate.getTime() +
+            ((week - 1) * 7 + (day.dayNumber - 1)) * 24 * 60 * 60 * 1000,
+        );
+
+        workoutInserts.push({
+          userId,
+          mesocycleId,
+          splitDayLabel: `W${week} D${day.dayNumber} - ${day.label}`,
+          sessionType: SessionType.MESOCYCLE,
+          weekNumber: week,
+          dayNumber: day.dayNumber,
+          scheduledDate,
+          date: scheduledDate,
+          status: 'PLANNED' as const,
+          prescriptionSnapshot,
+        });
+      }
+    }
+
+    if (workoutInserts.length > 0) {
+      await this.prisma.workout.createMany({ data: workoutInserts });
+    }
+
+    return this.expandToProgram(mesocycleId, userId);
   }
 
   async getTemplates() {
@@ -450,10 +627,16 @@ export class MesocyclesService {
           isDeloadWeek,
           label: isDeloadWeek ? `Week ${weekNumber} — Deload` : `Week ${weekNumber}`,
           days: days.map((workout) => {
+            const dayLabel = deriveDayLabel(
+              workout.splitDayLabel,
+              workout.prescriptionSnapshot,
+            );
             return {
               id: workout.id,
               dayNumber: workout.dayNumber ?? null,
-              sessionType: workout.sessionType ?? workout.splitDayLabel ?? 'Session',
+              dayLabel,
+              muscleSummary: deriveMuscleSummary(workout.prescriptionSnapshot, dayLabel),
+              sessionType: dayLabel,
               date: workout.date ?? workout.scheduledDate ?? workout.completedAt ?? workout.createdAt,
               completed: workout.status === 'COMPLETED',
               prescription: workout.prescriptionSnapshot ?? null,

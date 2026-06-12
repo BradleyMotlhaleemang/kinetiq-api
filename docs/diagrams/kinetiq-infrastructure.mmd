@@ -1,0 +1,94 @@
+%% Kinetiq — Infrastructure Architecture Diagram
+%% Tool: Mermaid (https://mermaid.live, GitHub, VS Code, Notion, etc.)
+%% Usage: paste into https://mermaid.live or include in markdown with ```mermaid block
+
+flowchart TB
+    subgraph USERS["Users (~10 testers)"]
+        U["Mobile / Desktop Browser<br/>Botswana · ~5 ms RTT to JNB"]
+    end
+
+    subgraph DNS["DNS"]
+        D_APP["app.yourdomain.com"]
+        D_API["api.yourdomain.com"]
+    end
+
+    subgraph GH["GitHub"]
+        REPO["Kinetiq monorepo<br/>kinetiq-api · kinetiq-app"]
+        GHA["GitHub Actions CI<br/>lint · test · build"]
+        GHCR["ghcr.io ARM64 images"]
+    end
+
+    subgraph OCI["Oracle Cloud — af-johannesburg-1 Always Free A1"]
+        subgraph VPS["Single VM · 2 OCPU · 12 GB RAM · 50 GB boot"]
+            subgraph COOLIFY["Coolify"]
+                PROXY["Reverse Proxy<br/>Traefik / Caddy"]
+                TLS["Let's Encrypt TLS"]
+                CD["Deploy orchestration<br/>webhook from main"]
+            end
+
+            subgraph COMPOSE["Docker Compose · internal network"]
+                APP["kinetiq-app<br/>Next.js 16 · :3001"]
+                API["kinetiq-api<br/>NestJS 11 · :3000<br/>/api/v1 · 24/7"]
+                PG[("PostgreSQL 16<br/>:5432")]
+                REDIS[("Redis 7<br/>:6379")]
+            end
+
+            subgraph API_INTERNAL["Inside kinetiq-api container (24/7)"]
+                CRON["MesocycleAdvanceWorker<br/>@Cron midnight TZ"]
+                BULL["Bull queue workers<br/>e1rm-rollup · sfl-daily-update<br/>sfr-calculation · biofeedback-prompt"]
+            end
+        end
+
+        FW["Security List<br/>in: 22 · 80 · 443 only"]
+    end
+
+    subgraph EXTERNAL["External services"]
+        SMTP["SMTP<br/>Gmail / transactional mail"]
+        SENTRY["Sentry · error alerts"]
+        UPTIME["UptimeRobot · downtime alerts"]
+    end
+
+    %% User traffic
+    U --> D_APP & D_API
+    D_APP --> FW
+    D_API --> FW
+    FW --> PROXY
+    PROXY --> TLS
+    TLS -->|"HTTPS app.*"| APP
+    TLS -->|"HTTPS api.*"| API
+
+    %% App to API (browser)
+    APP -.->|"NEXT_PUBLIC_API_URL<br/>credentials + JWT"| API
+
+    %% Internal data layer
+    API --> PG
+    API --> REDIS
+    API --- CRON
+    API --- BULL
+    BULL --> REDIS
+
+    %% CI/CD
+    REPO --> GHA
+    GHA -->|"pass on main"| GHCR
+    GHCR --> CD
+    CD --> COMPOSE
+
+    %% Email & observability
+    API --> SMTP
+    SMTP -.->|"verify / reset links<br/>FRONTEND_URL"| U
+    API -.-> SENTRY
+    APP -.-> SENTRY
+    UPTIME -.->|"HTTP checks"| D_APP & D_API
+
+    %% Styling
+    classDef user fill:#e8f4fc,stroke:#1a73e8,color:#111
+    classDef infra fill:#f0f4e8,stroke:#5c7a29,color:#111
+    classDef data fill:#fff3e0,stroke:#e65100,color:#111
+    classDef cicd fill:#f3e5f5,stroke:#7b1fa2,color:#111
+    classDef external fill:#fce4ec,stroke:#c2185b,color:#111
+
+    class U user
+    class OCI,VPS,COOLIFY,PROXY,TLS,CD,FW,APP,API,CRON,BULL infra
+    class PG,REDIS data
+    class GH,REPO,GHA,GHCR cicd
+    class SMTP,SENTRY,UPTIME,DNS,D_APP,D_API external

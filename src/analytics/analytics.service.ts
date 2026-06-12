@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { toVolumeKey } from '../common/volume-key.util';
 
 @Injectable()
 export class AnalyticsService {
@@ -39,11 +40,11 @@ export class AnalyticsService {
 
     const byMuscle: Record<string, number> = {};
     for (const h of history) {
-      const muscle = h.exercise.primaryMuscle;
+      const muscle = toVolumeKey(h.exercise.primaryMuscle);
       byMuscle[muscle] = (byMuscle[muscle] ?? 0) + h.totalSets;
     }
 
-   const volumeTargets = activeMesocycle.volumeTargets as any;
+    const volumeTargets = activeMesocycle.volumeTargets as any;
 
     return Object.entries(byMuscle).map(([muscle, sets]) => ({
       muscle,

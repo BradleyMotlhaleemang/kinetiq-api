@@ -25,8 +25,9 @@ export class SubmitClassificationDto {
   @Max(3, { each: true })
   answers!: number[];
 
+  @IsOptional()
   @IsIn(EXPERIENCE_LEVEL_VALUES)
-  selectedLevel!: ExperienceLevelValue;
+  selectedLevel?: ExperienceLevelValue;
 
   @IsOptional()
   @IsBoolean()

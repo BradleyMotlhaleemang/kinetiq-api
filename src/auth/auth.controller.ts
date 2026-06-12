@@ -50,6 +50,7 @@ export class AuthController {
     return req.user;
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Get('verify-email')
   verifyEmail(@Query() query: VerifyEmailDto, @Req() req: ExpressRequest) {
     return this.auth.verifyEmail(query.token, auditFromRequest(req));
@@ -75,6 +76,7 @@ export class AuthController {
     return { message: 'Password updated successfully.' };
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post('refresh')
   refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
     return this.auth.refresh(req, res, auditFromRequest(req));

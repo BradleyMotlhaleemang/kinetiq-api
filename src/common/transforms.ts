@@ -59,8 +59,14 @@ export function transformUser(user: any) {
 
 export function transformWorkout(workout: any) {
   if (!workout) return null;
+  const programGoal =
+    workout.splitTemplate?.goal ??
+    workout.mesocycle?.splitTemplate?.goal ??
+    null;
+  const { splitTemplate, mesocycle, ...rest } = workout;
   return {
-    ...workout,
+    ...rest,
+    programGoal,
     statusLabel: WORKOUT_STATUS_LABELS[workout.status] ?? workout.status,
   };
 }

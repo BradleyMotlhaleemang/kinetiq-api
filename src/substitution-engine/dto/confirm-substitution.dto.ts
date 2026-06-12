@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class ConfirmSubstitutionDto {
   @IsString()
@@ -16,4 +16,8 @@ export class ConfirmSubstitutionDto {
   @IsOptional()
   @IsNumber()
   painScoreAtSwap?: number;
+
+  @IsOptional()
+  @IsIn(['SESSION', 'REMAINING_BLOCK'])
+  scope?: 'SESSION' | 'REMAINING_BLOCK';
 }

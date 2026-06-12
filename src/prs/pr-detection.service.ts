@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PRScope, PRType } from '@prisma/client';
+import { PRRecord, PRScope, PRType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -9,6 +9,34 @@ export class PrDetectionService {
   private getMonthYear(date: Date): string {
     const month = `${date.getMonth() + 1}`.padStart(2, '0');
     return `${date.getFullYear()}-${month}`;
+  }
+
+  private recordKey(
+    exerciseId: string,
+    scope: PRScope,
+    type: PRType,
+    mesocycleId: string | null,
+    monthYear: string | null,
+  ): string {
+    return `${exerciseId}:${scope}:${type}:${mesocycleId ?? ''}:${monthYear ?? ''}`;
+  }
+
+  private buildRecordMap(records: PRRecord[]): Map<string, PRRecord> {
+    const map = new Map<string, PRRecord>();
+    for (const rec of records) {
+      const key = this.recordKey(
+        rec.exerciseId,
+        rec.scope,
+        rec.type,
+        rec.mesocycleId,
+        rec.monthYear,
+      );
+      const existing = map.get(key);
+      if (!existing || rec.value > existing.value) {
+        map.set(key, rec);
+      }
+    }
+    return map;
   }
 
   async detectPRs(userId: string, workoutId: string) {
@@ -28,10 +56,30 @@ export class PrDetectionService {
       },
     });
 
+    if (sets.length === 0) return;
+
+    const exerciseIds = [...new Set(sets.map((s) => s.exerciseId))];
+    const monthYear = this.getMonthYear(new Date());
+    const achievedAt = new Date();
+
+    const existingRecords = await this.prisma.pRRecord.findMany({
+      where: {
+        userId,
+        exerciseId: { in: exerciseIds },
+        OR: [
+          { scope: PRScope.ALL_TIME },
+          ...(workout?.mesocycleId
+            ? [{ scope: PRScope.MESOCYCLE, mesocycleId: workout.mesocycleId }]
+            : []),
+          { scope: PRScope.MONTHLY, monthYear },
+        ],
+      },
+    });
+
+    const recordMap = this.buildRecordMap(existingRecords);
+
     for (const set of sets) {
       const e1rm = set.e1rm ?? 0;
-      const monthYear = this.getMonthYear(new Date());
-      const achievedAt = new Date();
       const equipmentName = set.exercise.metadata?.equipmentProfile?.name ?? null;
 
       const candidates: Array<{ type: PRType; value: number }> = [
@@ -45,61 +93,30 @@ export class PrDetectionService {
       for (const candidate of candidates) {
         const checks: Array<{
           scope: PRScope;
-          where: Record<string, unknown>;
           monthYear: string | null;
           mesocycleId: string | null;
         }> = [
-          {
-            scope: PRScope.ALL_TIME,
-            where: {
-              userId,
-              exerciseId: set.exerciseId,
-              scope: PRScope.ALL_TIME,
-              type: candidate.type,
-            },
-            monthYear: null,
-            mesocycleId: null,
-          },
+          { scope: PRScope.ALL_TIME, monthYear: null, mesocycleId: null },
           ...(workout?.mesocycleId
-            ? [
-                {
-                  scope: PRScope.MESOCYCLE,
-                  where: {
-                    userId,
-                    exerciseId: set.exerciseId,
-                    scope: PRScope.MESOCYCLE,
-                    type: candidate.type,
-                    mesocycleId: workout.mesocycleId,
-                  },
-                  monthYear: null,
-                  mesocycleId: workout.mesocycleId,
-                },
-              ]
+            ? [{ scope: PRScope.MESOCYCLE, monthYear: null, mesocycleId: workout.mesocycleId }]
             : []),
-          {
-            scope: PRScope.MONTHLY,
-            where: {
-              userId,
-              exerciseId: set.exerciseId,
-              scope: PRScope.MONTHLY,
-              type: candidate.type,
-              monthYear,
-            },
-            monthYear,
-            mesocycleId: null,
-          },
+          { scope: PRScope.MONTHLY, monthYear, mesocycleId: null },
         ];
 
         for (const check of checks) {
-          const existing = await this.prisma.pRRecord.findFirst({
-            where: check.where,
-            orderBy: { value: 'desc' },
-          });
+          const key = this.recordKey(
+            set.exerciseId,
+            check.scope,
+            candidate.type,
+            check.mesocycleId,
+            check.monthYear,
+          );
+          const existing = recordMap.get(key);
 
           if (existing && candidate.value <= existing.value) continue;
 
           if (existing) {
-            await this.prisma.pRRecord.update({
+            const updated = await this.prisma.pRRecord.update({
               where: { id: existing.id },
               data: {
                 value: candidate.value,
@@ -112,8 +129,9 @@ export class PrDetectionService {
                 achievedAt,
               },
             });
+            recordMap.set(key, updated);
           } else {
-            await this.prisma.pRRecord.create({
+            const created = await this.prisma.pRRecord.create({
               data: {
                 userId,
                 exerciseId: set.exerciseId,
@@ -131,6 +149,7 @@ export class PrDetectionService {
                 achievedAt,
               },
             });
+            recordMap.set(key, created);
           }
 
           hitTypes.add(candidate.type);

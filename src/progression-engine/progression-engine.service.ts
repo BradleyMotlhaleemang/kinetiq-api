@@ -19,6 +19,11 @@ export interface ProgressionResult {
   repRangeHigh: number;
   setTarget: number;
   reason: string;
+  enginePhase: string;
+  physiologicalState: string;
+  confidenceLevel: string;
+  coachingNote: string | null;
+  progressionStep: 'REPS' | 'EXECUTION' | 'LOAD' | 'SETS' | null;
 }
 
 @Injectable()
@@ -101,6 +106,11 @@ export class ProgressionEngineService {
       repRangeHigh: output.repRangeHigh,
       setTarget: output.setTarget,
       reason,
+      enginePhase: output.enginePhase,
+      physiologicalState: output.physiologicalState,
+      confidenceLevel: output.confidence,
+      coachingNote: output.coachingNote,
+      progressionStep: output.progressionStep,
     };
   }
 }

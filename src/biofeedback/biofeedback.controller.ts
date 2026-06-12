@@ -36,9 +36,12 @@ export class BiofeedbackController {
   }
 
   @Get('muscles/:workoutId')
-getMusclesTrained(@Param('workoutId') workoutId: string) {
-  return this.biofeedback.getMusclesTrained(workoutId);
-}
+  getMusclesTrained(
+    @Request() req: any,
+    @Param('workoutId') workoutId: string,
+  ) {
+    return this.biofeedback.getMusclesTrained(req.user.userId, workoutId);
+  }
 
   @Get('soreness/:muscle')
   getSorenessHistory(

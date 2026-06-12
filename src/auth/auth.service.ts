@@ -72,6 +72,18 @@ export class AuthService {
       });
     }
 
+    if (user.accountStatus === 'SUSPENDED') {
+      await this.audit.log(
+        AUTH_EVENTS.LOGIN_FAILED,
+        { ...ctx, userId: user.id, email: normalizedEmail },
+        'ACCOUNT_SUSPENDED',
+      );
+      throw new UnauthorizedException({
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'This account has been suspended. Contact support.',
+      });
+    }
+
     if (!user.emailVerified) {
       await this.audit.log(
         AUTH_EVENTS.LOGIN_FAILED,
@@ -109,7 +121,8 @@ export class AuthService {
     }
 
     await this.users.resetFailedLogin(user.id);
-    const tokens = await this.issueSession(user.id, normalizedEmail, res);
+    await this.users.updateLastLogin(user.id);
+    const tokens = await this.issueSession(user.id, normalizedEmail, user.role, res);
     await this.audit.log(AUTH_EVENTS.LOGIN_SUCCESS, { ...ctx, userId: user.id, email: normalizedEmail });
 
     return { accessToken: tokens.accessToken };
@@ -148,7 +161,7 @@ export class AuthService {
       throw new UnauthorizedException({ code: 'TOKEN_REUSE', message: 'Session invalidated' });
     }
 
-    const tokens = await this.issueSession(user.id, user.email, res);
+    const tokens = await this.issueSession(user.id, user.email, user.role, res);
     return { accessToken: tokens.accessToken };
   }
 
@@ -193,6 +206,12 @@ export class AuthService {
       return { message: 'If that email is registered and unverified, a new link will be sent.' };
     }
 
+    try {
+      await this.audit.assertVerificationEmailAllowed(user.id);
+    } catch {
+      return { message: 'If that email is registered and unverified, a new link will be sent.' };
+    }
+
     await this.sendVerificationEmail(user.id, normalizedEmail, ctx);
     return { message: 'If that email is registered and unverified, a new link will be sent.' };
   }
@@ -201,6 +220,12 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await this.users.findByEmail(normalizedEmail);
     if (!user) return;
+
+    try {
+      await this.audit.assertPasswordResetEmailAllowed(user.id);
+    } catch {
+      return;
+    }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = this.hashToken(rawToken);
@@ -250,8 +275,13 @@ export class AuthService {
     });
   }
 
-  private async issueSession(userId: string, email: string, res: any) {
-    const payload = { sub: userId, email };
+  private async issueSession(
+    userId: string,
+    email: string,
+    role: string,
+    res: any,
+  ) {
+    const payload = { sub: userId, email, role };
     const accessToken = await this.jwt.signAsync(payload, { expiresIn: '15m' });
     const refreshToken = await this.jwt.signAsync(payload, {
       secret: process.env.JWT_REFRESH_SECRET as string,
@@ -265,6 +295,8 @@ export class AuthService {
   }
 
   private async sendVerificationEmail(userId: string, email: string, ctx: AuditContext) {
+    await this.audit.assertVerificationEmailAllowed(userId);
+
     const rawToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = this.hashToken(rawToken);
     const expiry = new Date(Date.now() + VERIFICATION_EXPIRY_MS);

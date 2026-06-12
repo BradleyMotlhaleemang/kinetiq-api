@@ -148,6 +148,7 @@ model User {
   email            String   @unique
   passwordHash     String
   displayName      String
+  role             UserRole @default(USER)
   experienceLevel  String   @default("INTERMEDIATE")
   trainingAgeMths  Int      @default(0)
   bodyweightKg     Float?
@@ -165,6 +166,8 @@ model User {
   levelOverrideAcknowledged Boolean   @default(false)
   classificationConfidence  Float?
   classificationCompletedAt DateTime?
+  classificationAnswers     Int[]     @default([])
+  daysPerWeek               Int?
   mesocycles            Mesocycle[]
   workouts              Workout[]
   sessionReadiness   SessionReadiness[]
@@ -192,6 +195,9 @@ model User {
   emailVerificationTokenExpiry DateTime?
   failedLoginAttempts        Int       @default(0)
   lockedUntil                DateTime?
+  lastLoginAt                DateTime?
+  lastActiveAt               DateTime?
+  accountStatus              AccountStatus @default(ACTIVE)
   muscleGroupFeedback MuscleGroupFeedback[]
   splitTemplates      SplitTemplate[]
 }
@@ -210,6 +216,37 @@ model AuthAuditLog {
   @@index([userId, createdAt])
 }
 
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  entityType String
+  entityId   String
+  action     String
+  summary    String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, createdAt])
+  @@index([actorId, createdAt])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  LOCKED
+}
+
+enum ChestRegion {
+  UPPER
+  MID
+  LOWER
+  OVERALL
+}
+
 model Exercise {
   id               String                     @id @default(cuid())
   name             String                     @unique
@@ -219,6 +256,8 @@ model Exercise {
   exerciseType     ExerciseType
   movementClass    MovementClass?
   category         ExerciseCategory           @default(PRIMARY_COMPOUND)
+  chestRegion      ChestRegion?
+  inclineAngleDegrees Int?
   isCompound       Boolean                    @default(true)
   metadata         ExerciseMetadata?
   substitutionPools SubstitutionPoolExercise[]
@@ -335,6 +374,7 @@ model SplitDayExercise {
   setsTarget  Int
   repRangeMin Int
   repRangeMax Int
+  rpeTarget   Float
 }
 
 model Mesocycle {
@@ -355,6 +395,25 @@ model Mesocycle {
   updatedAt      DateTime   @updatedAt
   workouts       Workout[]
   weeklyFeedback     WeeklyFeedback[]
+  exerciseOverrides  MesocycleExerciseOverride[]
+
+  @@index([userId, status, createdAt(sort: Desc)])
+}
+
+model MesocycleExerciseOverride {
+  id                   String    @id @default(cuid())
+  mesocycleId          String
+  mesocycle            Mesocycle @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
+  splitDayExerciseId   String
+  originalExerciseId   String
+  substituteExerciseId String
+  source               String    @default("MANUAL")
+  reason               String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([mesocycleId, splitDayExerciseId])
+  @@index([mesocycleId])
 }
 
 model MesocycleTemplate {
@@ -373,6 +432,7 @@ model MesocycleTemplate {
   deloadNotes       String?
   difficultyWarning String?
   featured          Boolean             @default(false)
+  isPublished       Boolean             @default(true)
   mesocycles        Mesocycle[]         @relation("TemplateSource")
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
@@ -413,6 +473,10 @@ model Workout {
   bioFeedback          BioFeedback?
   setRestLogs      SetRestLog[]
   workoutExercises  WorkoutExercise[]
+
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([userId, status, completedAt(sort: Desc)])
+  @@index([mesocycleId, status, completedAt])
 }
 
 model WorkoutExercise {
@@ -452,6 +516,7 @@ model Set {
   updatedAt        DateTime @updatedAt
 
   @@unique([workoutId, exerciseId, setNumber])
+  @@index([exerciseId])
 }
 
 model SessionReadiness {
@@ -505,6 +570,12 @@ model KnowledgeEntry {
   updatedAt      DateTime @updatedAt
 }
 
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
 model PerformanceHistory {
   id          String   @id @default(cuid())
   userId      String
@@ -521,6 +592,7 @@ model PerformanceHistory {
   date        DateTime
 
   @@unique([userId, exerciseId, date])
+  @@index([userId, date(sort: Desc)])
 }
 
 model ProgressionLog {
@@ -549,6 +621,7 @@ model ProgressionLog {
   loggedAt        DateTime @default(now())
 
   @@index([workoutId])
+  @@index([userId, exerciseId, status, loggedAt(sort: Desc)])
 }
 
 enum ProgressionLogStatus {
@@ -605,12 +678,20 @@ model PlateauMarker {
   resolved   Boolean  @default(false)
 }
 
+enum JointTriageOutcome {
+  HEALTHY
+  MILD
+  SIGNIFICANT
+  SKIPPED
+}
+
 model BioFeedback {
   id               String   @id @default(cuid())
   userId           String
   user             User     @relation(fields: [userId], references: [id])
   workoutId        String?  @unique
   workout          Workout? @relation(fields: [workoutId], references: [id])
+  jointTriage      JointTriageOutcome?
   sorenessLog      Json
   jointComfortLog  Json
   globalJointComfortScore Int
@@ -620,6 +701,8 @@ model BioFeedback {
   effortScore      Int?
   loggedAt         DateTime @default(now())
   muscleGroupFeedback MuscleGroupFeedback[]
+
+  @@index([userId, loggedAt(sort: Desc)])
 }
 
 model ExerciseSubstitution {
@@ -660,7 +743,9 @@ model NotificationLog {
   readAt          DateTime?
   createdAt       DateTime @default(now())
 
+  @@index([userId, createdAt(sort: Desc)])
 }
+
 model FatigueSnapshot {
   id                 String   @id @default(cuid())
   userId             String
@@ -719,6 +804,8 @@ model FoodLog {
   carbsConsumed     Float
   fatsConsumed      Float
   loggedAt          DateTime @default(now())
+
+  @@index([userId, date])
 }
 
 model NutritionTarget {
@@ -804,4 +891,5 @@ model MuscleGroupFeedback {
   loggedAt       DateTime @default(now())
 
   @@unique([bioFeedbackId, muscleGroup])
+  @@index([userId, muscleGroup, loggedAt(sort: Desc)])
 }

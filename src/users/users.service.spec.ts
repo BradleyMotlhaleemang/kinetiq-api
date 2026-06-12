@@ -204,6 +204,24 @@ describe('UsersService', () => {
     );
   });
 
+  it('persists classificationAnswers on submit', async () => {
+    const answers = [3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+    mockPrisma.user.update.mockResolvedValue({
+      ...baseUser,
+      classificationAnswers: answers,
+    });
+
+    await service.submitClassification('user-1', buildPayload(answers, 'INTERMEDIATE'));
+
+    expect(mockPrisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          classificationAnswers: answers,
+        }),
+      }),
+    );
+  });
+
   it('returns strongestDomains and weakestDomain deterministically', async () => {
     const answers = [3, 3, 3, 3, 0, 0, 2, 1, 1, 1, 3, 3];
     mockPrisma.user.update.mockResolvedValue({

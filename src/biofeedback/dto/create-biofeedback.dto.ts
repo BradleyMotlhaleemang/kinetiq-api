@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { JOINT_TRIAGE_OUTCOMES } from '../joint-pain-scale';
 
 export class MuscleGroupFeedbackItemDto {
   @IsString()
@@ -29,11 +31,15 @@ export class CreateBiofeedbackDto {
   @IsString()
   workoutId?: string;
 
+  @IsOptional()
+  @IsIn([...JOINT_TRIAGE_OUTCOMES])
+  jointTriage?: (typeof JOINT_TRIAGE_OUTCOMES)[number];
+
   @IsObject()
   sorenessLog!: Record<string, number>;
 
   @IsObject()
-  jointComfortLog!: Record<string, number>;
+  jointComfortLog!: Record<string, unknown>;
 
   @IsInt()
   globalJointComfortScore!: number;

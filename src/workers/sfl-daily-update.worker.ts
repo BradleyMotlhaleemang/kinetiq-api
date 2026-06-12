@@ -13,9 +13,17 @@ export class SflDailyUpdateWorker {
 
   @Process('update')
   async handleUpdate(job: Job<{ userId: string; workoutId: string }>) {
-    const { userId, workoutId } = job.data;
+    const { userId } = job.data;
 
     const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const existingSnapshot = await this.prisma.fatigueSnapshot.findFirst({
+      where: { userId, snapshotAt: { gte: startOfDay } },
+      select: { id: true },
+    });
+    if (existingSnapshot) return;
     const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const since48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
     const since72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);

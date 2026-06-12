@@ -15,6 +15,9 @@ import { GoalModeService } from '../goal-mode/goal-mode.service';
 import { BiofeedbackService } from '../biofeedback/biofeedback.service';
 import { VolumeProgressionService } from '../engine/progression/volume-progression.service';
 import { SubstitutionEngineService } from '../substitution-engine/substitution-engine.service';
+import { resolveJointsForExercise } from '../biofeedback/joint-map';
+import { ExerciseActivationService } from './exercise-activation.service';
+import { LoadAdvisoryService } from './load-advisory.service';
 
 @Injectable()
 export class WorkoutsService {
@@ -29,6 +32,8 @@ export class WorkoutsService {
     @InjectQueue(BIOFEEDBACK_PROMPT_QUEUE)
     private biofeedbackPromptQueue: Queue,
     private readonly substitutionEngine: SubstitutionEngineService,
+    private readonly exerciseActivation: ExerciseActivationService,
+    private readonly loadAdvisory: LoadAdvisoryService,
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
@@ -44,7 +49,7 @@ export class WorkoutsService {
       });
 
       if (scheduled) {
-        return this.prisma.workout.update({
+        const started = await this.prisma.workout.update({
           where: { id: scheduled.id },
           data: {
             status: 'IN_PROGRESS',
@@ -52,10 +57,12 @@ export class WorkoutsService {
             date: new Date(),
           },
         });
+        void this.touchUserActivity(userId);
+        return started;
       }
     }
 
-    return this.prisma.workout.create({
+    const workout = await this.prisma.workout.create({
       data: {
         userId,
         mesocycleId: mesocycleId ?? null,
@@ -65,6 +72,15 @@ export class WorkoutsService {
         startedAt: new Date(),
         date: new Date(),
       },
+    });
+    void this.touchUserActivity(userId);
+    return workout;
+  }
+
+  private async touchUserActivity(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastActiveAt: new Date() },
     });
   }
 
@@ -85,10 +101,45 @@ export class WorkoutsService {
   async findOne(userId: string, id: string) {
     const workout = await this.prisma.workout.findFirst({
       where: { id, userId },
-      include: { sets: true },
+      include: {
+        sets: true,
+        splitTemplate: { select: { goal: true } },
+        mesocycle: { include: { splitTemplate: { select: { goal: true } } } },
+      },
     });
     if (!workout) throw new NotFoundException('Workout not found');
     return workout;
+  }
+
+  async getCompletionAdvisory(
+    userId: string,
+    excludeWorkoutId?: string,
+    completedAfter?: string,
+    completedBefore?: string,
+  ) {
+    const start = completedAfter ? new Date(completedAfter) : new Date();
+    const end = completedBefore ? new Date(completedBefore) : new Date();
+    if (!completedAfter || !completedBefore) {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    const completedCount = await this.prisma.workout.count({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        ...(excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {}),
+        completedAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    return {
+      completedToday: completedCount > 0,
+      completedCount,
+    };
   }
 
   async getWorkoutExercises(userId: string, workoutId: string) {
@@ -147,6 +198,7 @@ export class WorkoutsService {
         setsTarget?: number;
         repRangeMin?: number;
         repRangeMax?: number;
+        rpeTarget?: number;
       }>;
     } | null;
 
@@ -192,6 +244,7 @@ export class WorkoutsService {
           setsTarget: entry.setsTarget ?? 3,
           repRangeMin: entry.repRangeMin ?? 8,
           repRangeMax: entry.repRangeMax ?? 12,
+          rpeTarget: entry.rpeTarget ?? null,
           primaryMuscle: meta?.primaryMuscle ?? entry.primaryMuscle ?? null,
           movementClass: meta?.movementClass ?? 'UNKNOWN',
         };
@@ -203,6 +256,110 @@ export class WorkoutsService {
       splitDayLabel: workout.splitDayLabel,
       exercises,
     };
+  }
+
+  async addWorkoutExercise(userId: string, workoutId: string, exerciseId: string) {
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+      select: { id: true, status: true, sessionType: true },
+    });
+    if (!workout) throw new NotFoundException('Workout not found');
+    if (workout.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Cannot add exercises to a completed workout');
+    }
+    if (workout.sessionType !== SessionType.STANDALONE) {
+      throw new BadRequestException('Exercises can only be added to quick workouts');
+    }
+
+    const exercise = await this.prisma.exercise.findUnique({
+      where: { id: exerciseId },
+      select: {
+        id: true,
+        name: true,
+        primaryMuscle: true,
+        movementClass: true,
+      },
+    });
+    if (!exercise) throw new NotFoundException('Exercise not found');
+
+    const existing = await this.prisma.workoutExercise.findUnique({
+      where: { workoutId_exerciseId: { workoutId, exerciseId } },
+    });
+    if (existing) {
+      return {
+        id: existing.id,
+        exerciseId: existing.exerciseId,
+        name: exercise.name,
+        orderIndex: existing.orderIndex,
+        setsTarget: existing.setsTarget,
+        repRangeMin: existing.repRangeMin,
+        repRangeMax: existing.repRangeMax,
+        primaryMuscle: exercise.primaryMuscle,
+        movementClass: exercise.movementClass ?? 'UNKNOWN',
+      };
+    }
+
+    const maxOrder = await this.prisma.workoutExercise.aggregate({
+      where: { workoutId },
+      _max: { orderIndex: true },
+    });
+    const orderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
+
+    const created = await this.prisma.workoutExercise.create({
+      data: {
+        workoutId,
+        exerciseId,
+        orderIndex,
+        setsTarget: 3,
+        repRangeMin: 8,
+        repRangeMax: 12,
+      },
+    });
+
+    return {
+      id: created.id,
+      exerciseId: created.exerciseId,
+      name: exercise.name,
+      orderIndex: created.orderIndex,
+      setsTarget: created.setsTarget,
+      repRangeMin: created.repRangeMin,
+      repRangeMax: created.repRangeMax,
+      primaryMuscle: exercise.primaryMuscle,
+      movementClass: exercise.movementClass ?? 'UNKNOWN',
+    };
+  }
+
+  async removeWorkoutExercise(
+    userId: string,
+    workoutId: string,
+    workoutExerciseId: string,
+  ) {
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+      select: { id: true, status: true, sessionType: true },
+    });
+    if (!workout) throw new NotFoundException('Workout not found');
+    if (workout.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Cannot remove exercises from a completed workout');
+    }
+    if (workout.sessionType !== SessionType.STANDALONE) {
+      throw new BadRequestException('Exercises can only be removed from quick workouts');
+    }
+
+    const row = await this.prisma.workoutExercise.findFirst({
+      where: { id: workoutExerciseId, workoutId },
+    });
+    if (!row) throw new NotFoundException('Workout exercise not found');
+
+    const loggedSets = await this.prisma.set.count({
+      where: { workoutId, exerciseId: row.exerciseId },
+    });
+    if (loggedSets > 0) {
+      throw new BadRequestException('Cannot remove an exercise with logged sets');
+    }
+
+    await this.prisma.workoutExercise.delete({ where: { id: workoutExerciseId } });
+    return { deleted: true };
   }
 
   private async validateWorkoutOwnership(
@@ -223,7 +380,13 @@ export class WorkoutsService {
       where: { userId, status: 'COMPLETED' },
       orderBy: { createdAt: 'desc' },
       take: 20,
-      include: { sets: true },
+      include: {
+        sets: {
+          include: {
+            exercise: { select: { id: true, name: true, primaryMuscle: true } },
+          },
+        },
+      },
     });
   }
 
@@ -237,16 +400,23 @@ export class WorkoutsService {
       where: { id: exerciseId },
       select: {
         id: true,
+        name: true,
         category: true,
         primaryMuscle: true,
         secondaryMuscles: true,
+        movementPattern: true,
       },
     });
     if (!exercise) throw new NotFoundException('Exercise not found');
 
     const workout = await this.prisma.workout.findFirst({
       where: { id: workoutId, userId },
-      select: { weekNumber: true, mesocycleId: true, dayNumber: true },
+      select: {
+        weekNumber: true,
+        mesocycleId: true,
+        dayNumber: true,
+        sessionType: true,
+      },
     });
 
     const lastPerf = await this.prisma.performanceHistory.findFirst({
@@ -258,6 +428,37 @@ export class WorkoutsService {
         totalSets: true,
       },
     });
+
+    if (workout?.sessionType === SessionType.STANDALONE) {
+      const weightTarget = lastPerf?.bestWeight ?? 20;
+      const repRangeLow = 8;
+      const repRangeHigh = 12;
+      return {
+        exerciseId,
+        action: 'HOLD',
+        weightTarget,
+        repRangeLow,
+        repRangeHigh,
+        setTarget: 3,
+        reason: 'Quick workout — use your last logged performance or defaults.',
+        enginePhase: 'BASELINE',
+        physiologicalState: 'UNKNOWN',
+        confidenceLevel: 'INSUFFICIENT_DATA',
+        coachingNote: null,
+        progressionStep: null,
+        historicalBestWeight: lastPerf?.bestWeight ?? null,
+        prescriptionActive: false,
+        substitution: {
+          action: 'NONE',
+          reason: '',
+          originalExercise: {
+            exerciseId,
+            name: exercise.name,
+          },
+          candidates: [],
+        },
+      };
+    }
 
     const exerciseSets = await this.prisma.set.findMany({
       where: { workoutId, exerciseId },
@@ -332,9 +533,10 @@ export class WorkoutsService {
         ? normalizeVolumeSignal(mgf.volumeSignal)
         : null;
       const fromLog = this.maxJointPainForExercise(
-        jointPainLog,
+        jointPainLog as Record<string, unknown>,
         exercise.primaryMuscle,
         exercise.secondaryMuscles,
+        exercise.movementPattern,
       );
       jointPainScore = Math.max(fromLog, mgf?.jointComfortScore ?? 0);
     }
@@ -479,6 +681,7 @@ export class WorkoutsService {
         recentPumpScores,
         recentSorenessScores,
         sorenessThreshold,
+        jointPainScore,
       });
 
       setTarget = volResult.setTarget;
@@ -493,10 +696,11 @@ export class WorkoutsService {
       jointPainForSubstitution,
     );
 
+    const activation = await this.exerciseActivation.evaluate(userId, exerciseId);
+
     const prescription = {
       ...engineOutput,
-      confidenceLevel:
-        engineOutput.confidenceLevel ?? engineOutput.confidence ?? null,
+      confidenceLevel: engineOutput.confidenceLevel ?? null,
       enginePhase: engineOutput.enginePhase ?? null,
       physiologicalState: engineOutput.physiologicalState ?? null,
       coachingNote: engineOutput.coachingNote ?? null,
@@ -507,11 +711,60 @@ export class WorkoutsService {
       exerciseId,
       ...prescription,
       setTarget,
+      prescriptionActive: activation.active,
+      activation,
+      historicalBestWeight: lastPerf?.bestWeight ?? null,
       ...(volumeProgressionReason !== undefined
         ? { volumeProgressionReason }
         : {}),
-      substitution,
+      substitution: this.mapSubstitutionForClient(
+        substitution,
+        exerciseId,
+        exercise.name,
+        jointPainForSubstitution,
+      ),
     };
+  }
+
+  private mapSubstitutionForClient(
+    sub: Awaited<ReturnType<SubstitutionEngineService['evaluate']>>,
+    originalExerciseId: string,
+    originalExerciseName: string,
+    jointPainLog: Record<string, number>,
+  ) {
+    const painScores = Object.values(jointPainLog);
+    const maxPain = painScores.length > 0 ? Math.max(...painScores) : 0;
+    const affectedJoint = Object.entries(jointPainLog).find(
+      ([, score]) => score === maxPain,
+    )?.[0];
+
+    const base = {
+      action: sub.action,
+      reason: sub.reason,
+      affectedJoint,
+      originalExercise: {
+        exerciseId: originalExerciseId,
+        name: originalExerciseName,
+      },
+      candidates: sub.candidates?.map((c) => ({
+        exerciseId: c.exerciseId,
+        name: c.exerciseName,
+        priority: c.priority,
+      })),
+    };
+
+    if (sub.action === 'SUBSTITUTE' && sub.substituteExerciseId) {
+      return {
+        ...base,
+        recommended: {
+          exerciseId: sub.substituteExerciseId,
+          name: sub.substituteName ?? '',
+          reason: sub.reason,
+        },
+      };
+    }
+
+    return base;
   }
 
   async addSet(
@@ -598,28 +851,54 @@ export class WorkoutsService {
     },
   });
 
-  try {
-    await this.finalizeWorkoutProgressionLogs(userId, workoutId, workout.sets);
-  } catch (err) {
-    console.error('[complete] Progression log finalization failed — non-blocking:', err);
-  }
-
-  const promptPayload = { userId, workoutId };
-  try {
-    await this.e1rmQueue.add('rollup', { userId, workoutId });
-    await this.sflQueue.add('update', { userId, workoutId });
-    await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
-      delay: BIOFEEDBACK_PROMPT_DELAY_2H_MS,
-    });
-    await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
-      delay: getMsUntilNextDay11am(),
-    });
-  } catch (err) {
-    console.error('[complete] Queue dispatch failed — non-blocking:', err);
-  }
+  void this.touchUserActivity(userId);
+  void this.runPostCompleteWork(userId, workoutId, workout.sets);
 
   return completed;
 }
+
+  private runPostCompleteWork(
+    userId: string,
+    workoutId: string,
+    sets: Array<{ exerciseId: string }>,
+  ) {
+    void (async () => {
+      try {
+        await this.finalizeWorkoutProgressionLogs(userId, workoutId, sets);
+      } catch (err) {
+        console.error('[complete] Progression log finalization failed — non-blocking:', err);
+      }
+
+      const promptPayload = { userId, workoutId };
+      try {
+        const jobOpts = { removeOnComplete: 100 as const, removeOnFail: 50 as const };
+        await this.e1rmQueue.add('rollup', { userId, workoutId }, {
+          ...jobOpts,
+          jobId: `rollup:${workoutId}`,
+        });
+        await this.sflQueue.add('update', { userId, workoutId }, {
+          ...jobOpts,
+          jobId: `sfl:${workoutId}`,
+        });
+        await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+          ...jobOpts,
+          jobId: `prompt:${workoutId}:immediate`,
+        });
+        await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+          ...jobOpts,
+          jobId: `prompt:${workoutId}:2h`,
+          delay: BIOFEEDBACK_PROMPT_DELAY_2H_MS,
+        });
+        await this.biofeedbackPromptQueue.add('prompt', promptPayload, {
+          ...jobOpts,
+          jobId: `prompt:${workoutId}:nextday`,
+          delay: getMsUntilNextDay11am(),
+        });
+      } catch (err) {
+        console.error('[complete] Queue dispatch failed — non-blocking:', err);
+      }
+    })();
+  }
 
   private queuePendingProgressionLogWrite(input: {
     userId: string;
@@ -848,37 +1127,102 @@ export class WorkoutsService {
     return 'INTERMEDIATE';
   }
 
+  async getLoadAdvisory(
+    userId: string,
+    workoutId: string,
+    exerciseId: string,
+    weight: number,
+    reps: number,
+  ) {
+    await this.validateWorkoutOwnership(userId, workoutId);
+
+    const exercise = await this.prisma.exercise.findUnique({
+      where: { id: exerciseId },
+      select: { id: true, category: true },
+    });
+    if (!exercise) throw new NotFoundException('Exercise not found');
+
+    const workoutExercise = await this.prisma.workoutExercise.findFirst({
+      where: { workoutId, exerciseId },
+      select: { repRangeMax: true },
+    });
+
+    const sessionSets = await this.prisma.set.findMany({
+      where: { workoutId, exerciseId },
+      select: { weight: true, reps: true },
+      orderBy: { setNumber: 'asc' },
+    });
+
+    let confidenceLevel = 'INSUFFICIENT_DATA';
+    let weightTarget: number | undefined;
+    try {
+      const rx = await this.getPrescription(userId, workoutId, exerciseId);
+      confidenceLevel = rx.confidenceLevel ?? 'INSUFFICIENT_DATA';
+      weightTarget = rx.weightTarget;
+    } catch {
+      // advisory can still run with defaults
+    }
+
+    return this.loadAdvisory.evaluate({
+      userId,
+      workoutId,
+      exerciseId,
+      weight,
+      reps,
+      repRangeHigh: workoutExercise?.repRangeMax,
+      weightTarget,
+      confidenceLevel,
+      sessionSets,
+    });
+  }
+
+  private jointScoreFromLog(
+    jointPainLog: Record<string, unknown>,
+    joint: string,
+  ): number {
+    const v = jointPainLog[joint];
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+    if (v && typeof v === 'object' && 'score' in v) {
+      const score = (v as { score: unknown }).score;
+      if (typeof score === 'number' && !Number.isNaN(score)) return score;
+    }
+    return 0;
+  }
+
   private maxJointPainForExercise(
-    jointPainLog: Record<string, number> | null,
+    jointPainLog: Record<string, unknown> | null,
     primaryMuscle: string,
     secondaryMuscles: string[],
+    movementPattern?: string | null,
   ): number {
     if (!jointPainLog || Object.keys(jointPainLog).length === 0) return 0;
 
-    const keys = [primaryMuscle, ...secondaryMuscles];
-    let max = 0;
-    for (const k of keys) {
-      const v = jointPainLog[k];
-      if (typeof v === 'number' && !Number.isNaN(v) && v > max) max = v;
-    }
+    const relevantJoints = resolveJointsForExercise({
+      primaryMuscle,
+      secondaryMuscles,
+      movementPattern,
+    });
 
-    if (max === 0) {
-      const vals = Object.values(jointPainLog).filter(
-        (n): n is number => typeof n === 'number' && !Number.isNaN(n),
-      );
-      if (vals.length > 0) max = Math.max(...vals);
+    let max = 0;
+    for (const joint of relevantJoints) {
+      max = Math.max(max, this.jointScoreFromLog(jointPainLog, joint));
     }
 
     return max;
   }
 
   private buildJointPainMap(
-    jointComfortLog: Record<string, number> | null | undefined,
+    jointComfortLog: Record<string, unknown> | null | undefined,
   ): Record<string, number> {
     if (!jointComfortLog || Object.keys(jointComfortLog).length === 0) {
       return {};
     }
-    return jointComfortLog;
+    const out: Record<string, number> = {};
+    for (const joint of Object.keys(jointComfortLog)) {
+      const score = this.jointScoreFromLog(jointComfortLog, joint);
+      if (score > 0) out[joint] = score;
+    }
+    return out;
   }
 
   private pickSetsTargetFromSplitTemplate(

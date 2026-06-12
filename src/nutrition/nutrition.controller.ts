@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Patch, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { NutritionService } from './nutrition.service';
 
 @UseGuards(AuthGuard('jwt'))
@@ -47,6 +48,7 @@ export class NutritionController {
     return this.nutrition.calculateTargets(req.user.userId);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Get('foods/search')
   searchFoods(@Query('q') query: string) {
     return this.nutrition.searchFoodItems(query ?? '');

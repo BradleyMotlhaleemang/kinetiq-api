@@ -1,7 +1,9 @@
 import { Controller, Get, Param, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { AnalyticsService } from './analytics.service';
 
+@Throttle({ default: { limit: 20, ttl: 60000 } })
 @UseGuards(AuthGuard('jwt'))
 @Controller('analytics')
 export class AnalyticsController {

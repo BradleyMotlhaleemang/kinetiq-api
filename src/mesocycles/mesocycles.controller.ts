@@ -1,6 +1,9 @@
 import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { MesocyclesService } from './mesocycles.service';
+import { MesocycleOverridesService } from './mesocycle-overrides.service';
+import { CreateExerciseOverrideDto } from './dto/create-exercise-override.dto';
 import { transformMesocycle } from '../common/transforms';
 //import {
 //EXPERIENCE_LEVEL_LABELS,
@@ -12,7 +15,10 @@ import { transformMesocycle } from '../common/transforms';
 @UseGuards(AuthGuard('jwt'))
 @Controller('mesocycles')
 export class MesocyclesController {
-  constructor(private mesocycles: MesocyclesService) {}
+  constructor(
+    private mesocycles: MesocyclesService,
+    private overrides: MesocycleOverridesService,
+  ) {}
 
   @Get('templates')
   getTemplates() {
@@ -31,6 +37,7 @@ export class MesocyclesController {
     return list.map(transformMesocycle);
   }
 
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   @Post('generate')
   async generate(
     @Request() req: any,
@@ -74,5 +81,29 @@ export class MesocyclesController {
   @Get(':id/volume-status')
   volumeStatus(@Request() req: any, @Param('id') id: string) {
     return this.mesocycles.getVolumeStatus(req.user.userId, id);
+  }
+
+  @Get(':id/exercise-overrides')
+  listExerciseOverrides(@Request() req: any, @Param('id') id: string) {
+    return this.overrides.listOverrides(req.user.userId, id);
+  }
+
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @Post(':id/regenerate')
+  regenerate(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { splitTemplateId: string },
+  ) {
+    return this.mesocycles.regenerateFromTemplate(req.user.userId, id, body.splitTemplateId);
+  }
+
+  @Post(':id/exercise-overrides')
+  createExerciseOverride(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: CreateExerciseOverrideDto,
+  ) {
+    return this.overrides.createOverride(req.user.userId, id, body);
   }
 }

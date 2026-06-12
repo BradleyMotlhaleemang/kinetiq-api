@@ -1,5 +1,6 @@
 import { PrismaClient, TrainingGoal } from '@prisma/client'
 import { splitTemplates, type SplitTemplate } from './data/split-template-catalog'
+import { resolveRpeTarget } from '../src/templates/rpe.utils'
 
 function deriveSplitType(slug: string): string {
   if (slug.startsWith('full-body')) return 'FULL_BODY'
@@ -21,6 +22,7 @@ function derivePrimaryMuscle(splitType: string): string {
 
 function mapCatalogGoal(goal: SplitTemplate['goal']): TrainingGoal {
   if (goal === 'STRENGTH') return 'STRENGTH'
+  if (goal === 'POWERBUILDING') return 'POWERBUILDING'
   if (goal === 'HYPERTROPHY') return 'HYPERTROPHY'
   return 'HYPERTROPHY'
 }
@@ -120,12 +122,56 @@ export async function seedSplitCatalog(prisma: PrismaClient): Promise<void> {
                       setsTarget: exercise.setsTarget,
                       repRangeMin: exercise.repRangeMin,
                       repRangeMax: exercise.repRangeMax,
+                      rpeTarget: resolveRpeTarget(
+                        exercise.repRangeMin,
+                        exercise.repRangeMax,
+                        exercise.rpeTarget,
+                      ),
                     })),
                   },
                 }
               : {}),
           })),
         },
+      },
+    })
+
+    const durationBySlug: Record<string, { min: number; max: number; featured?: boolean }> = {
+      'full-body-3x': { min: 4, max: 6 },
+      'full-body-4x': { min: 6, max: 8 },
+      'upper-lower-4x': { min: 6, max: 8, featured: true },
+      'upper-lower-5x': { min: 8, max: 12 },
+      'ppl-3x': { min: 6, max: 8 },
+      'ppl-6x': { min: 8, max: 12, featured: true },
+      'ppl-upper-lower-5x': { min: 8, max: 12 },
+      'bro-split-5x': { min: 8, max: 12 },
+      'strength-4x': { min: 6, max: 8 },
+      'high-frequency-6x': { min: 4, max: 6 },
+    }
+    const duration = durationBySlug[tpl.slug] ?? { min: 6, max: 8 }
+
+    await prisma.mesocycleTemplate.upsert({
+      where: { slug: tpl.slug },
+      update: {
+        name: tpl.name,
+        level: tpl.level,
+        goal,
+        splitTemplateId: template.id,
+        durationWeeksMin: duration.min,
+        durationWeeksMax: duration.max,
+        progressionType: 'LINEAR',
+        featured: duration.featured ?? false,
+      },
+      create: {
+        slug: tpl.slug,
+        name: tpl.name,
+        level: tpl.level,
+        goal,
+        splitTemplateId: template.id,
+        durationWeeksMin: duration.min,
+        durationWeeksMax: duration.max,
+        progressionType: 'LINEAR',
+        featured: duration.featured ?? false,
       },
     })
 

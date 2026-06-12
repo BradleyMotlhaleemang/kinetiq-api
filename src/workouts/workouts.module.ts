@@ -10,6 +10,8 @@ import { BullModule } from '@nestjs/bull';
 import { E1RM_ROLLUP_QUEUE } from '../workers/e1rm-rollup.worker';
 import { BIOFEEDBACK_PROMPT_QUEUE } from '../workers/biofeedback-prompt.worker';
 import { SubstitutionEngineModule } from '../substitution-engine/substitution-engine.module';
+import { ExerciseActivationService } from './exercise-activation.service';
+import { LoadAdvisoryService } from './load-advisory.service';
 
 @Module({
   imports: [
@@ -22,7 +24,7 @@ import { SubstitutionEngineModule } from '../substitution-engine/substitution-en
     BullModule.registerQueue({ name: BIOFEEDBACK_PROMPT_QUEUE }),
     SubstitutionEngineModule,
   ],
-  providers: [WorkoutsService],
+  providers: [WorkoutsService, ExerciseActivationService, LoadAdvisoryService],
   controllers: [WorkoutsController],
   exports: [WorkoutsService],
 })

@@ -1,0 +1,76 @@
+# Kinetiq production stack — Oracle Cloud A1 (ARM64) + Coolify
+# Set env in deploy/.env or Coolify UI. Prefer GHCR images built by GitHub Actions.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: kinetiq
+      POSTGRES_USER: kinetiq
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  api:
+    image: ${KINETIQ_API_IMAGE:-ghcr.io/bradleymotlhaleemang/kinetiq-api:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://kinetiq:${POSTGRES_PASSWORD}@postgres:5432/kinetiq
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      FRONTEND_URL: https://app.${DOMAIN}
+      CORS_ORIGINS: https://app.${DOMAIN}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      TZ: ${TZ:-Africa/Gaborone}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  app:
+    image: ${KINETIQ_APP_IMAGE:-ghcr.io/bradleymotlhaleemang/kinetiq-app:latest}
+    depends_on:
+      - api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  pgdata:

@@ -3,6 +3,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { transformUser } from '../common/transforms';
 import { SubmitClassificationDto } from './dto/submit-classification.dto';
+import { UpdateOnboardingDto } from './dto/update-onboarding.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('users')
@@ -15,20 +17,14 @@ export class UsersController {
     return transformUser(user);
   }
 
+  @Patch('me/profile')
+  async updateProfile(@Request() req: any, @Body() body: UpdateProfileDto) {
+    const user = await this.users.updateProfile(req.user.userId, body);
+    return transformUser(user);
+  }
+
   @Patch('me/onboarding')
-  async updateOnboarding(
-    @Request() req: any,
-    @Body() body: {
-      gender?: string;
-      dateOfBirth?: string;
-      bodyweightKg?: number;
-      goalMode?: string;
-      experienceLevel?: string;
-      trainingAgeMths?: number;
-      notificationsEnabled?: boolean;
-      preferredTrainingTime?: string;
-    },
-  ) {
+  async updateOnboarding(@Request() req: any, @Body() body: UpdateOnboardingDto) {
     const user = await this.users.updateOnboarding(req.user.userId, body);
     return transformUser(user);
   }

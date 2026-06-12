@@ -91,19 +91,19 @@ npx prisma migrate dev
 npx prisma db seed
 ```
 
-To seed the **10 split template catalog** (Full Body, Upper/Lower, PPL, etc. with full exercise prescriptions):
+The default seed loads the **10 split template catalog** (Full Body, Upper/Lower, PPL, etc. with full exercise prescriptions and `MesocycleTemplate` duration metadata).
+
+To use the legacy split template path instead:
 
 ```bash
-SEED_SPLIT_CATALOG=true npx prisma db seed
+SEED_SPLIT_CATALOG=false SEED_SPLIT_TYPES=true npx prisma db seed
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:SEED_SPLIT_CATALOG="true"; npx prisma db seed
+$env:SEED_SPLIT_CATALOG="false"; $env:SEED_SPLIT_TYPES="true"; npx prisma db seed
 ```
-
-Without `SEED_SPLIT_CATALOG`, the seed still loads exercises and substitution pools, but uses the legacy split template path (requires `SEED_SPLIT_TYPES`).
 
 Alternative direct command:
 
