@@ -2,13 +2,24 @@
 
 ## 1. Register domain
 
-Register at any registrar (Namecheap, Cloudflare, Porkbun, etc.). Suggested patterns:
+Register at any registrar (Namecheap, Cloudflare, Porkbun, etc.).
 
-- `kinetiq.app`
-- `getkinetiq.com`
-- `kinetiq.co.bw`
+**Current domain:** `kinetiqlift.lol` (Porkbun). Parked status is normal until DNS A records are added.
 
 Cost: ~$10–15/year. **Wait to create DNS records** until the Oracle VM has a stable public IPv4.
+
+### Porkbun DNS (when VM IP is known)
+
+1. Log in at [porkbun.com](https://porkbun.com) → Domain Management → `kinetiqlift.lol` → **DNS**
+2. Delete any parking records if they conflict
+3. Add records:
+
+| Type | Host | Answer | TTL |
+|------|------|--------|-----|
+| A | `app` | `<VM_IP>` | 300 |
+| A | `api` | `<VM_IP>` | 300 |
+
+4. Save. Propagation usually takes 5–30 minutes.
 
 ## 2. Required hostnames
 

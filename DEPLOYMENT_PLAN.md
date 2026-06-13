@@ -277,7 +277,7 @@ Daily `pg_dump` cron on host; retain 7 days. Optional copy to OCI Object Storage
 | Monitor | URL | Interval |
 |---------|-----|----------|
 | App | `https://app.<domain>` | 5 min |
-| API | `https://api.<domain>/api/v1` (or health route) | 5 min |
+| API | `https://api.<domain>/api/v1/health` | 5 min |
 
 Free tier: email alerts when down. Complements Sentry (which catches "up but broken").
 

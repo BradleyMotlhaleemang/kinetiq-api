@@ -1,8 +1,9 @@
-import { Controller, Post, Get, Patch, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, Param, Query, UseGuards, Request, Headers } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { WorkoutsService } from './workouts.service';
 import { transformWorkout, transformPrescription } from '../common/transforms';
+import { AddSetDto } from './dto/add-set.dto';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('workouts')
@@ -48,6 +49,12 @@ export class WorkoutsController {
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const workout = await this.workouts.findOne(req.user.userId, id);
+    return transformWorkout(workout);
+  }
+
+  @Patch(':id/start')
+  async start(@Request() req: any, @Param('id') id: string) {
+    const workout = await this.workouts.start(req.user.userId, id);
     return transformWorkout(workout);
   }
 
@@ -111,13 +118,8 @@ export class WorkoutsController {
   addSet(
     @Request() req: any,
     @Param('id') workoutId: string,
-    @Body() body: {
-      exerciseId: string;
-      setNumber: number;
-      weight: number;
-      reps: number;
-      rpe?: number;
-    },
+    @Body() body: AddSetDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     return this.workouts.addSet(
       req.user.userId,
@@ -127,6 +129,7 @@ export class WorkoutsController {
       body.weight,
       body.reps,
       body.rpe,
+      idempotencyKey,
     );
   }
 

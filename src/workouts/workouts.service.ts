@@ -18,6 +18,9 @@ import { SubstitutionEngineService } from '../substitution-engine/substitution-e
 import { resolveJointsForExercise } from '../biofeedback/joint-map';
 import { ExerciseActivationService } from './exercise-activation.service';
 import { LoadAdvisoryService } from './load-advisory.service';
+import { RedisCacheService } from '../common/redis/redis-cache.service';
+
+const SET_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 
 @Injectable()
 export class WorkoutsService {
@@ -34,6 +37,7 @@ export class WorkoutsService {
     private readonly substitutionEngine: SubstitutionEngineService,
     private readonly exerciseActivation: ExerciseActivationService,
     private readonly loadAdvisory: LoadAdvisoryService,
+    private readonly redisCache: RedisCacheService,
   ) {}
 
   async create(userId: string, mesocycleId?: string, splitDayLabel?: string) {
@@ -109,6 +113,36 @@ export class WorkoutsService {
     });
     if (!workout) throw new NotFoundException('Workout not found');
     return workout;
+  }
+
+  async start(userId: string, workoutId: string) {
+    const workout = await this.prisma.workout.findFirst({
+      where: { id: workoutId, userId },
+    });
+    if (!workout) throw new NotFoundException('Workout not found');
+
+    if (workout.status === 'COMPLETED') {
+      throw new BadRequestException('Workout is already completed');
+    }
+    if (workout.status === 'ABANDONED') {
+      throw new BadRequestException('Workout was abandoned');
+    }
+
+    if (workout.status === 'IN_PROGRESS') {
+      void this.touchUserActivity(userId);
+      return this.findOne(userId, workoutId);
+    }
+
+    const started = await this.prisma.workout.update({
+      where: { id: workoutId },
+      data: {
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+        date: new Date(),
+      },
+    });
+    void this.touchUserActivity(userId);
+    return this.findOne(userId, started.id);
   }
 
   async getCompletionAdvisory(
@@ -775,12 +809,44 @@ export class WorkoutsService {
     weight: number,
     reps: number,
     rpe?: number,
+    idempotencyKey?: string,
   ) {
     await this.validateWorkoutOwnership(userId, workoutId);
 
     const workout = await this.findOne(userId, workoutId);
     if (workout.status === 'COMPLETED') {
       throw new BadRequestException('Cannot add sets to a completed workout');
+    }
+
+    if (idempotencyKey) {
+      const cacheKey = `idem:set:${userId}:${idempotencyKey}`;
+      const cachedSetId = await this.redisCache.get<string>(cacheKey);
+      if (cachedSetId) {
+        const cached = await this.prisma.set.findFirst({
+          where: { id: cachedSetId, workoutId },
+        });
+        if (cached) return cached;
+      }
+    }
+
+    const existing = await this.prisma.set.findUnique({
+      where: {
+        workoutId_exerciseId_setNumber: {
+          workoutId,
+          exerciseId,
+          setNumber,
+        },
+      },
+    });
+    if (existing) {
+      if (idempotencyKey) {
+        await this.redisCache.set(
+          `idem:set:${userId}:${idempotencyKey}`,
+          existing.id,
+          SET_IDEMPOTENCY_TTL_SECONDS,
+        );
+      }
+      return existing;
     }
 
     const e1rm = weight * (1 + reps / 30);
@@ -802,6 +868,14 @@ export class WorkoutsService {
         stimulusScore,
       },
     });
+
+    if (idempotencyKey) {
+      await this.redisCache.set(
+        `idem:set:${userId}:${idempotencyKey}`,
+        set.id,
+        SET_IDEMPOTENCY_TTL_SECONDS,
+      );
+    }
 
     await this.updatePerformanceHistory(userId, exerciseId, workoutId, weight, reps, e1rm);
 

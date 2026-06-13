@@ -33,6 +33,7 @@ import { NutritionModule } from './nutrition/nutrition.module';
 import { TimerModule } from './timer/timer.module';
 import { TemplatesModule } from './templates/templates.module';
 import { AdminModule } from './admin/admin.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { AdminModule } from './admin/admin.module';
     TimerModule,
     TemplatesModule,
     AdminModule,
+    HealthModule,
   ],
   providers: [
     {

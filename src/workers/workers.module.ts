@@ -4,6 +4,7 @@ import { E1rmRollupWorker, E1RM_ROLLUP_QUEUE } from './e1rm-rollup.worker';
 import { SflDailyUpdateWorker, SFL_DAILY_UPDATE_QUEUE } from './sfl-daily-update.worker';
 import { SfrWorker, SFR_QUEUE } from './sfr.worker';
 import { MesocycleAdvanceWorker } from './mesocycle-advance.worker';
+import { AbandonedWorkoutWorker } from './abandoned-workout.worker';
 import {
   BiofeedbackPromptWorker,
   BIOFEEDBACK_PROMPT_QUEUE,
@@ -27,6 +28,7 @@ import { PrsModule } from '../prs/prs.module';
     SflDailyUpdateWorker,
     SfrWorker,
     MesocycleAdvanceWorker,
+    AbandonedWorkoutWorker,
     BiofeedbackPromptWorker,
   ],
   exports: [BullModule],

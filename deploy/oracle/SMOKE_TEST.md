@@ -7,13 +7,14 @@ Run after first Coolify deploy with DNS and secrets configured.
 | # | Test | Pass criteria |
 |---|------|---------------|
 | 1 | Open `https://app.<domain>` | Login page renders |
-| 2 | `https://api.<domain>/api/v1` | Responds (200 or valid API response) |
+| 2 | `https://api.<domain>/api/v1/health` | 200 JSON with `database: up`, `redis: up` |
 | 3 | Browser console on login | No CORS errors calling `api.<domain>` |
 | 4 | Register new user | 201; verification email received |
 | 5 | Verify email link | Redirects to app; account verified |
 | 6 | Login | Access token in sessionStorage |
 | 7 | Inspect cookies on `api.<domain>` | httpOnly refresh cookie set (secure) |
 | 8 | Wait 15 min or force 401 | Silent refresh via `/api/v1/auth/refresh` |
+| 8b | Close browser, reopen app | Dashboard loads without login; proactive refresh on cold start |
 | 9 | Logout | Cookie cleared; redirected to login |
 
 ## Application
@@ -21,6 +22,7 @@ Run after first Coolify deploy with DNS and secrets configured.
 | # | Test | Pass criteria |
 |---|------|---------------|
 | 10 | Start workout, log set, reload | Data persists |
+| 10b | Airplane mode during set save | Yellow banner; set syncs when online |
 | 11 | Complete workout | e1rm rollup in API logs or DB |
 | 12 | Register page | No "Continue in Demo Mode" button (production build) |
 
