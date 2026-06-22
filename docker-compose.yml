@@ -1,4 +1,4 @@
-# Kinetiq production stack — Oracle Cloud A1 (ARM64) + Coolify
+# Kinetiq production stack — Hetzner CX23 (AMD64) + Coolify
 # Set env in deploy/.env or Coolify UI. Prefer GHCR images built by GitHub Actions.
 
 services:
@@ -36,9 +36,6 @@ services:
 
   api:
     image: ${KINETIQ_API_IMAGE:-ghcr.io/bradleymotlhaleemang/kinetiq-api:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

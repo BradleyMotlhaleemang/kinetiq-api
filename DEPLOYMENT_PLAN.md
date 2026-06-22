@@ -1,22 +1,22 @@
-# Kinetiq — Oracle Cloud Deployment Plan
+# Kinetiq — Hetzner Cloud Deployment Plan
 
-**Version:** 2.0 — June 2026  
-**Target:** 10 active users (private beta), ~$1/month (domain only)  
-**Stack:** Oracle Always Free A1 (Johannesburg) + Coolify + GitHub Actions + Docker Compose (ARM64)  
-**Status:** Repo artifacts in place — follow manual runbooks for OCI, domain, and first deploy
+**Version:** 3.0 — June 2026  
+**Target:** 10 active users (private beta), ~€6/month  
+**Stack:** Hetzner CX23 (EU) + Coolify + GitHub Actions + Docker Compose (AMD64)  
+**Status:** Repo artifacts in place — follow manual runbooks for Hetzner, domain, and first deploy
 
 ---
 
 ## Executive summary
 
-Kinetiq runs as two applications (`kinetiq-api`, `kinetiq-app`) backed by PostgreSQL and Redis on a single **Oracle Cloud Always Free** Ampere A1 VM in **Johannesburg** (`af-johannesburg-1`). **Coolify** handles deploys and SSL; **GitHub Actions** runs CI and publishes **ARM64** images to GHCR.
+Kinetiq runs as two applications (`kinetiq-api`, `kinetiq-app`) backed by PostgreSQL and Redis on a single **Hetzner Cloud CX23** VM in **Falkenstein** (`fsn1`) or another EU location. **Coolify** handles deploys and SSL; **GitHub Actions** runs CI and publishes **AMD64** images to GHCR.
 
-**Order of work matters.** Fix Phase 0 code/config before provisioning infra. Then domain + OCI + Coolify + DNS + secrets + smoke test.
+**Order of work matters.** Fix Phase 0 code/config before provisioning infra. Then domain + Hetzner + Coolify + DNS + secrets + smoke test.
 
 | Phase | Focus | Blocks go-live? |
 |-------|--------|-----------------|
 | 0 | Code fixes (CORS, cookies, env templates) | **Yes** |
-| 1 | Domain registration + Oracle account + VM | Yes |
+| 1 | Domain registration + Hetzner account + CX23 server | Yes |
 | 2 | Coolify install | Yes |
 | 3 | Docker Compose + GHCR images | Yes |
 | 4 | GitHub Actions CI (already in repo) | Recommended before first deploy |
@@ -25,7 +25,7 @@ Kinetiq runs as two applications (`kinetiq-api`, `kinetiq-app`) backed by Postgr
 | 7 | Deploy + smoke test | Yes |
 | 8 | Backups, monitoring, alerts, swap | Do within first week |
 
-**Manual runbooks:** [deploy/oracle/RUNBOOK-OCI.md](deploy/oracle/RUNBOOK-OCI.md) · [deploy/oracle/RUNBOOK-DOMAIN.md](deploy/oracle/RUNBOOK-DOMAIN.md) · [deploy/oracle/SMOKE_TEST.md](deploy/oracle/SMOKE_TEST.md)
+**Manual runbooks:** [deploy/hetzner/RUNBOOK-HETZNER.md](deploy/hetzner/RUNBOOK-HETZNER.md) · [deploy/hetzner/RUNBOOK-DOMAIN.md](deploy/hetzner/RUNBOOK-DOMAIN.md) · [deploy/hetzner/SMOKE_TEST.md](deploy/hetzner/SMOKE_TEST.md)
 
 ---
 
@@ -40,20 +40,20 @@ With the current codebase, the API **must** run continuously:
 | `MesocycleAdvanceWorker` | `@Cron` midnight in running process |
 | Redis throttling | Redis + API connection always on |
 
-**Adopted efficiencies (no rewrite):** GHCR pre-built ARM64 images (no on-VM builds), 2 OCPU / 12 GB shape, Docker memory limits, CI on GitHub, 2 GB swap, single VM compose stack.
+**Adopted efficiencies (no rewrite):** GHCR pre-built AMD64 images (no on-VM builds), Docker memory limits, CI on GitHub, 2 GB swap, single VM compose stack.
 
-**Rejected for v1:** Split API/worker containers (+RAM), serverless, Oracle Autonomous DB (not PostgreSQL).
+**Rejected for v1:** Split API/worker containers (+RAM), serverless, managed DB add-on.
 
 ---
 
 ## Architecture
 
 ```
-Internet (Botswana ~5 ms RTT to JNB)
+Internet (Botswana ~150–250 ms RTT to EU)
    │
    ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  OCI af-johannesburg-1 — VM.Standard.A1.Flex (2 OCPU, 12GB) │
+│  Hetzner CX23 — fsn1 / nbg1 / hel1 (2 vCPU, 4 GB, 40 GB)   │
 │  Coolify (reverse proxy + Let's Encrypt)                      │
 │                                                               │
 │   https://app.<domain>  ──►  kinetiq-app (Next.js :3001)     │
@@ -64,7 +64,7 @@ Internet (Botswana ~5 ms RTT to JNB)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Diagram source: [docs/diagrams/kinetiq-infrastructure.mmd](docs/diagrams/kinetiq-infrastructure.mmd)
+Diagram source: [docs/diagrams/kinetiq-infrastructure.d2](docs/diagrams/kinetiq-infrastructure.d2)
 
 ---
 
@@ -125,27 +125,27 @@ Skips `dev@kinetiq.local` and `coach@kinetiq.local`. Create real admin via regis
 
 ---
 
-## Phase 1 — Domain + Oracle Cloud
+## Phase 1 — Domain + Hetzner Cloud
 
-See [deploy/oracle/RUNBOOK-OCI.md](deploy/oracle/RUNBOOK-OCI.md) and [deploy/oracle/RUNBOOK-DOMAIN.md](deploy/oracle/RUNBOOK-DOMAIN.md).
+See [deploy/hetzner/RUNBOOK-HETZNER.md](deploy/hetzner/RUNBOOK-HETZNER.md) and [deploy/hetzner/RUNBOOK-DOMAIN.md](deploy/hetzner/RUNBOOK-DOMAIN.md).
 
 **Summary:**
 
 1. Register `<domain>` (~$10–15/year) — do not point DNS until VM IP is known.
-2. Oracle signup — home region **`af-johannesburg-1`** (locked at signup).
-3. Create `VM.Standard.A1.Flex` — **2 OCPU, 12 GB**, Ubuntu 24.04 aarch64, 50 GB boot, public IPv4.
-4. Security list: inbound **22** (your IP), **80**, **443** only. Deny **5432**, **6379** publicly.
-5. Host: SSH keys, non-root user, 2 GB swap, `unattended-upgrades`, hostname `kinetiq-oci-jnb`.
+2. Hetzner Cloud signup — add payment method.
+3. Create **CX23** in `fsn1` (or `nbg1` / `hel1`) — Ubuntu 24.04, public IPv4.
+4. Cloud Firewall: inbound **22** (your IP), **80**, **443** only. Deny **5432**, **6379** publicly.
+5. Host: SSH keys, deploy user, **2 GB swap**, `unattended-upgrades`, hostname `kinetiq-hetzner`.
 
-**Capacity:** If "Out of host capacity", retry or use [oci-arm-catcher](https://github.com/alexpua/oci-arm-catcher). Pay As You Go upgrade may help priority (still $0 within Always Free).
+**Capacity:** CX23 has 4 GB RAM — tight with Coolify. Use GHCR pull (no on-VM builds). Upgrade to **CX33** (8 GB) if OOM during deploy.
 
 ---
 
 ## Phase 2 — Coolify
 
-1. Install per [Coolify Oracle docs](https://coolify.io/docs/knowledge-base/server/oracle-cloud).
-2. Project `kinetiq-beta`, connect GitHub monorepo.
-3. Docker Compose resource from repo root `docker-compose.yml`.
+1. Install: `curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash`
+2. Project `kinetiq-beta`, connect GitHub (`kinetiq-api` repo for compose).
+3. Docker Compose resource from `docker-compose.yml`.
 4. Domains: `app.<domain>` → app service, `api.<domain>` → api service.
 5. **Pull GHCR images** — do not build on VM (saves RAM).
 
@@ -155,7 +155,7 @@ Make GHCR packages **public** or add registry credentials in Coolify for `ghcr.i
 
 ## Phase 3 — Docker Compose
 
-Root [`docker-compose.yml`](docker-compose.yml) defines postgres, redis, api, app with memory limits. Copy [`deploy/.env.example`](deploy/.env.example) → `deploy/.env` on server (never commit).
+[`docker-compose.yml`](docker-compose.yml) defines postgres, redis, api, app with memory limits. Copy [`deploy/.env.example`](deploy/.env.example) → `deploy/.env` on server (never commit).
 
 Set in Coolify / `deploy/.env`:
 
@@ -172,7 +172,7 @@ KINETIQ_APP_IMAGE=ghcr.io/<github-owner>/kinetiq-app:latest
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
 - **PR / push:** lint, test, build (api + app).
-- **Push to `main`:** build and push `linux/arm64` images to `ghcr.io/<owner>/kinetiq-api` and `kinetiq-app`.
+- **Push to `main`:** build and push `linux/amd64` images to `ghcr.io/<owner>/kinetiq-api` and `kinetiq-app`.
 
 **Optional repo variable:** `KINETIQ_DOMAIN` — used for `NEXT_PUBLIC_API_URL` at image build time.
 
@@ -234,7 +234,7 @@ docker exec -e SEED_SKIP_DEV_USERS=true <api_container> npx prisma db seed
 
 ## Phase 7 — Deploy and smoke test
 
-Full checklist: [deploy/oracle/SMOKE_TEST.md](deploy/oracle/SMOKE_TEST.md)
+Full checklist: [deploy/hetzner/SMOKE_TEST.md](deploy/hetzner/SMOKE_TEST.md)
 
 ---
 
@@ -242,7 +242,7 @@ Full checklist: [deploy/oracle/SMOKE_TEST.md](deploy/oracle/SMOKE_TEST.md)
 
 ### 8.1 Backups
 
-Daily `pg_dump` cron on host; retain 7 days. Optional copy to OCI Object Storage (20 GB Always Free).
+Daily `pg_dump` cron on host; retain 7 days. Optional copy to Hetzner Object Storage or S3-compatible bucket.
 
 ```bash
 0 3 * * * docker exec <postgres_container> pg_dump -U kinetiq kinetiq | gzip > /backups/kinetiq-$(date +\%F).sql.gz
@@ -277,17 +277,14 @@ Daily `pg_dump` cron on host; retain 7 days. Optional copy to OCI Object Storage
 | Monitor | URL | Interval |
 |---------|-----|----------|
 | App | `https://app.<domain>` | 5 min |
-| API | `https://api.<domain>/api/v1/health` | 5 min |
+| API | `https://api.<domain>/api/v1` (or health route) | 5 min |
 
 Free tier: email alerts when down. Complements Sentry (which catches "up but broken").
 
-Also helps satisfy Oracle idle-usage expectations via periodic HTTP traffic.
-
 #### Infrastructure
 
-- OCI Console — CPU/RAM/disk metrics
+- Hetzner Console — CPU/RAM/disk metrics
 - Coolify / `docker logs <container>`
-- Oracle idle policy: avoid <20% CPU, network, and memory for 7 consecutive days; log into console monthly
 
 ### 8.3 Updates
 
@@ -317,18 +314,18 @@ Redis **required**; API container **must** stay running 24/7.
 
 ## Cost estimate
 
-| Item | USD/mo |
-|------|--------|
-| OCI Always Free A1 | $0 |
+| Item | USD/mo (approx) |
+|------|-----------------|
+| Hetzner CX23 (fsn1) | ~€5.49 (~$6) |
 | Domain (amortized) | ~$1 |
 | SSL, GitHub Actions, Gmail SMTP, Sentry free | $0 |
-| **Total** | **~$1** |
+| **Total** | **~$7** |
 
 ---
 
 ## Fallback
 
-If Johannesburg A1 never provisions after 48–72 h: Pay As You Go retry, $300 trial temp shape, or Hetzner CX23 EU (~$5/mo, higher latency).
+If EU latency is unacceptable for beta testers: Oracle Always Free A1 in Johannesburg (~$1/mo domain only) — see [deploy/oracle/RUNBOOK-OCI.md](deploy/oracle/RUNBOOK-OCI.md). Requires ARM64 CI images instead of AMD64.
 
 ---
 
@@ -345,8 +342,8 @@ If Johannesburg A1 never provisions after 48–72 h: Pay As You Go retry, $300 t
 - [x] Dockerfiles, compose, `.dockerignore`, CI workflow
 
 ### Manual (you)
-- [ ] Domain registered
-- [ ] Oracle JNB account + A1 VM
+- [ ] Hetzner account + payment method
+- [ ] CX23 server provisioned
 - [ ] Coolify + compose deployed
 - [ ] DNS A records + SSL
 - [ ] Secrets in Coolify
@@ -362,4 +359,5 @@ If Johannesburg A1 never provisions after 48–72 h: Pay As You Go retry, $300 t
 | Date | Change |
 |------|--------|
 | 2026-06-11 | v1 — Hetzner CX23 plan |
-| 2026-06-12 | v2 — Oracle JNB; merged DevOps brief; GHCR ARM64; alerts runbook |
+| 2026-06-12 | v2 — Oracle JNB; GHCR ARM64 |
+| 2026-06-10 | v3 — Hetzner CX23 primary; GHCR AMD64; Hetzner runbooks |

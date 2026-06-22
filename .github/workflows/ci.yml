@@ -44,7 +44,7 @@ jobs:
         run: npm run build
 
   publish-image:
-    name: Publish ARM64 image
+    name: Publish AMD64 image
     needs: [api]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -53,8 +53,6 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,7 +67,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ env.API_IMAGE }}:latest
