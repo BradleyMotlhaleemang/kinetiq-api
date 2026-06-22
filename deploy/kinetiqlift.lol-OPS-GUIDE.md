@@ -114,19 +114,25 @@ nslookup api.kinetiqlift.lol
 
 ## Known issues & gotchas (read before deploy)
 
-### 1. GHCR images may still be ARM64 (blocker)
+### 1. GitHub Actions billing lock (blocker)
 
-Local repo CI targets `linux/amd64`, but **may not be pushed to GitHub yet**. CX23 is x86 — ARM images fail with `exec format error`.
+If Actions shows *"account is locked due to a billing issue"*, CI will not build images. **You do not need paid Actions** to deploy.
 
-**Fix:** Push amd64 CI to both repos → wait for Actions → confirm new `latest` on GHCR.
+**Fix:** Build and push images manually — see `deploy/hetzner/MANUAL-IMAGE-BUILD.md`.
 
-### 2. App API URL is baked at build time (blocker)
+### 2. GHCR images must be AMD64
+
+CX23 is x86. ARM images fail with `exec format error`.
+
+**Fix:** Build on Windows (amd64) or Hetzner with `docker build` (not `arm64`).
+
+### 3. App API URL is baked at build time (blocker)
 
 `NEXT_PUBLIC_API_URL` is set when the **app Docker image** is built. It must be `https://api.kinetiqlift.lol`.
 
-**Fix:** GitHub → `kinetiq-app` repo → Settings → Actions → Variables → `KINETIQ_DOMAIN` = `kinetiqlift.lol` → rebuild app image on `main`.
+**Fix:** When building the app image manually, pass `--build-arg NEXT_PUBLIC_API_URL=https://api.kinetiqlift.lol` (see manual build guide).
 
-### 3. Compose `build:` block on API service
+### 4. Compose `build:` block on API service
 
 `docker-compose.yml` includes a `build:` section for `api`. Coolify might try to **compile on the 4 GB server** and OOM.
 
@@ -177,9 +183,9 @@ Check off as you go. **Stop after each step and confirm before continuing** (pai
 | 0 | Read this guide + known issues | ☐ |
 | 1 | Verify SSH from current machine | ☐ |
 | 2 | Generate secrets → save in password manager | ☐ |
-| 3 | Push amd64 CI to GitHub (both repos) | ☐ |
-| 4 | Set `KINETIQ_DOMAIN=kinetiqlift.lol` on `kinetiq-app` | ☐ |
-| 5 | Confirm GHCR images exist (amd64) or make packages public | ☐ |
+| 3 | ~~Push amd64 CI~~ → **Manual build + push to GHCR** (see MANUAL-IMAGE-BUILD.md) | ☐ |
+| 4 | GitHub PAT (`write:packages`) + `docker login ghcr.io` | ☐ |
+| 5 | Confirm GHCR images exist (amd64) + packages public | ☐ |
 | 6 | Coolify → connect GitHub → grant `kinetiq-api` (+ `kinetiq-app`) | ☐ |
 | 7 | Coolify → add GHCR registry (if private) | ☐ |
 | 8 | Coolify → new Docker Compose resource from `kinetiq-api` | ☐ |
